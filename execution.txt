@@ -1,0 +1,10 @@
+1. Open two terminals and in one execute the following commmands one by one:
+ cd backend 
+ npm install
+ npm start
+
+2. In the second terminal execute the following commmands one by one:
+ cd frontend
+ npm install
+ npm run dev
+ 

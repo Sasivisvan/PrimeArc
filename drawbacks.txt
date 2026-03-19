@@ -1,0 +1,20 @@
+Here are the drawbacks and incomplete features of the current version of the project:
+
+1. Hardcoded UI Elements:
+   - All chat messages ("User: Hello!", "AI: Hi there.") are completely static HTML/JSX elements.
+   - Sidebar chats and right-panel information are hardcoded and not connected to any real data source.
+
+2. Missing Backend Implementation:
+   - The backend is essentially a skeleton. It connects to MongoDB but defines no schemas or logic. 
+   - The `/addme` endpoint is completely empty and serves no purpose currently.
+   - The LangChain and AI integrations are absent from the actual code, despite being in the `package.json`.
+
+3. Non-Functional User Interactions:
+   - Typing into the "Send a message..." input field and pressing Enter or sending does nothing.
+   - Clicking the top navigation buttons (Tasks, Notes, Myresources) will likely result in a blank page or error if the application lacks a properly configured `<Routes>` definition.
+
+4. Form/Input State Missing:
+   - The input field lacks a `value` and `onChange` handler, meaning React is not tracking what the user types.
+
+5. Incomplete Layout Responsive Design:
+   - The `CHAT_LAYOUT_GUIDE.md` mentions handling responsiveness via media queries, but it is unclear if `App.css` fully implements mobile-friendly hiding of sidebars yet.

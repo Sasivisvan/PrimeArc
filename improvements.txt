@@ -1,0 +1,19 @@
+Based on the current state of the PrimeArc project, here are the potential improvements and next steps:
+
+1. Frontend Routing Integration: 
+   - While `useNavigate` is used in `App.tsx`, complete the react-router-dom setup in `main.tsx` by wrapping the app in `<BrowserRouter>` and defining `<Routes>` for `/tasks`, `/notes`, and `/MyResources`.
+   - Create the actual React components for Tasks, Notes, and MyResources pages.
+
+2. Backend AI Integration:
+   - The backend has `@langchain/google-genai` installed but not implemented. Implement the logic to receive chat messages from the frontend, pass them to the Google GenAI model using LangChain, and return the response.
+
+3. Frontend-Backend Connection:
+   - Replace the hardcoded chat messages in React with state variables (`useState`).
+   - Implement `fetch` or use `axios` to send the user's input from the `<input>` element to the backend API and update the chat UI with the response.
+
+4. Database Models:
+   - Define Mongoose schemas/models in the `backend/models` directory (e.g., User, ChatMessage, Task, Note) to actually utilize the connected MongoDB database.
+
+5. Dynamic UI Updates:
+   - The right panel currently hardcodes "Model: GPT-4" and "Temperature: 0.7". Make this dynamic so users can adjust settings that get passed to the backend AI model.
+   - The left sidebar has hardcoded "Chat 1" and "Chat 2" items. These should map to a user's actual chat history fetched from the database.
