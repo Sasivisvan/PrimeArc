@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import "./App.css";
 
 // V.3.0 imports
@@ -19,7 +19,7 @@ import { UserProvider, useUser } from "./context/UserContext";
 // Main branch imports
 import AppLayout from './components/layout/AppLayout';
 import Dashboard from './pages/Dashboard';
-import LoginPage from './pages/login';
+import LoginPage from './pages/main-login';
 import SigninPage from './pages/signin';
 
 // Placeholders for main branch
