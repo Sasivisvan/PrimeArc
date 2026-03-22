@@ -3,6 +3,9 @@ import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
 
+import { CreateUser, GetAllUsers } from "./controllers/UserController.js";
+import {GetAiResponse} from "./routes/GetAiResponse.js";
+
 // Initialize dotenv
 dotenv.config();
 
@@ -21,6 +24,15 @@ app.get("/", (req, res) => {
     res.send("Backend is running with LangChain.js ready.");
 });
 
+app.post("/airesponse", async(req, res) => {
+    const response = await GetAiResponse(req.body.message);
+    console.log(response);
+    res.json({ reply: response });
+})
+
+app.get("/test", (req, res) => {
+    res.send("This is a test");
+})
 // Database Connection
 mongoose
     .connect(process.env.MONGO_URI)
@@ -28,7 +40,12 @@ mongoose
     .catch((err) => console.log(err));
 
 app.get("/addme", (req, res) => {
-    
+    try{
+        CreateUser(req,res);
+    }catch(e){
+        console.log(e);
+    }
+
 });
 
 app.listen(PORT, () => {

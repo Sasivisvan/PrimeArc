@@ -1,68 +1,53 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+@import "tailwindcss";
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #101019;
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+@theme {
+  --color-background: #0B1114;
+  --color-primary: #00E5FF;
+  --color-primary-glow: #00E5FF;
+  --color-secondary: #6366F1;
+  --color-secondary-foreground: #E0E7FF;
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
+  --color-alert-urgent: #FF3333;
+  --color-alert-notice: #FACC15;
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  --color-surface: rgba(30, 41, 59, 0.7);
+  --color-surface-hover: rgba(30, 41, 59, 0.9);
+
+  --font-sans: "Inter", "DM Sans", sans-serif;
+
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+
+  --shadow-glow-primary: 0 0 20px -5px rgba(0, 229, 255, 0.5);
+  --shadow-glow-urgent: 0 0 20px -5px rgba(255, 51, 51, 0.5);
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #694646;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+@layer base {
+  body {
+    @apply bg-background text-white font-sans antialiased;
+    background-image:
+      radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+      radial-gradient(circle at 100% 0%, rgba(0, 229, 255, 0.1) 0%, transparent 30%);
+    min-height: 100vh;
   }
-  a:hover {
-    color: #747bff;
+}
+
+@layer utilities {
+  /* 1. Define the base glass style */
+  .glass {
+    @apply bg-surface backdrop-blur-md border border-white/10 shadow-lg;
   }
-  button {
-    background-color: #f9f9f9;
+
+  /* 2. Update glass-card to NOT use "@apply glass" */
+  .glass-card {
+    /* We explicitly repeat the glass properties here because @apply can't read the class above */
+    @apply bg-surface backdrop-blur-md border border-white/10 shadow-lg rounded-xl transition-all duration-300 hover:border-primary/50 hover:shadow-glow-primary;
+  }
+
+  .text-glow {
+    text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
   }
 }
