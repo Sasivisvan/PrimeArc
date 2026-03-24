@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useUser } from '../context/UserContext';
-const NOTE_COLORS = ['#111111', '#1a1a1a', '#222222', '#0a0a0a', '#171717', '#000000'];
-const NOTE_ACCENTS = ['#ffffff', '#eeeeee', '#dddddd', '#cccccc', '#bbbbbb', '#999999'];
-const STORAGE_KEY = 'primearc_notes';
+import { Search, Paperclip, X, Check, FileImage, FileText, FileSpreadsheet, Video, Music, PaperclipIcon, Sparkles } from 'lucide-react';
 const MAX_FILE_SIZE_MB = 5;
+
+function apiBaseUrl() {
+    return import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:5000';
+}
 
 interface AttachedFile {
     name: string;
@@ -31,24 +33,18 @@ const formatSize = (bytes: number) => {
 };
 
 const fileIcon = (type: string) => {
-    if (type.startsWith('image/')) return '🖼️';
-    if (type === 'application/pdf') return '📄';
-    if (type.includes('word')) return '📝';
-    if (type.includes('sheet') || type.includes('excel')) return '📊';
-    if (type.startsWith('video/')) return '🎬';
-    if (type.startsWith('audio/')) return '🎵';
-    return '📎';
+    if (type.startsWith('image/')) return <FileImage size={14} />;
+    if (type === 'application/pdf' || type.includes('word')) return <FileText size={14} />;
+    if (type.includes('sheet') || type.includes('excel')) return <FileSpreadsheet size={14} />;
+    if (type.startsWith('video/')) return <Video size={14} />;
+    if (type.startsWith('audio/')) return <Music size={14} />;
+    return <PaperclipIcon size={14} />;
 };
 
 export default function Notes() {
     const { classLevel, username } = useUser();
     
-    const [localNotes, setLocalNotes] = useState<Note[]>(() => {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            return saved ? JSON.parse(saved) : [];
-        } catch { return []; }
-    });
+    const [myNotes, setMyNotes] = useState<Note[]>([]);
     const [communityNotes, setCommunityNotes] = useState<Note[]>([]);
     const [activeTab, setActiveTab] = useState<'my_notes' | 'community'>('my_notes');
 
@@ -58,7 +54,6 @@ export default function Notes() {
     
     const [newTitle, setNewTitle] = useState('');
     const [newContent, setNewContent] = useState('');
-    const [newColorIndex, setNewColorIndex] = useState(0);
     const [isPublic, setIsPublic] = useState(false);
     const [pendingFiles, setPendingFiles] = useState<AttachedFile[]>([]);
     
@@ -73,25 +68,47 @@ export default function Notes() {
     const [showAskModal, setShowAskModal] = useState(false);
     const [questionTitle, setQuestionTitle] = useState('');
     const [questionBody, setQuestionBody] = useState('');
+    const [noteUploadProgress, setNoteUploadProgress] = useState<number | null>(null);
+    const [isSavingNote, setIsSavingNote] = useState(false);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const fetchCommunityNotes = async () => {
+    const mapApiNote = (n: any): Note => ({
+        id: n._id,
+        title: n.title,
+        content: n.content,
+        author: n.author,
+        isPublic: !!n.isPublic,
+        colorIndex: 0,
+        files: Array.isArray(n.files) ? n.files : [],
+        createdAt: new Date(n.createdAt).getTime(),
+        updatedAt: new Date(n.updatedAt || n.createdAt).getTime(),
+    });
+
+    const fetchMyNotes = async () => {
+        if (!username) {
+            setMyNotes([]);
+            return;
+        }
         try {
-            const res = await fetch(`http://localhost:5000/api/notes?classLevel=${classLevel}&isPublic=true`);
+            const baseUrl = apiBaseUrl();
+            const res = await fetch(`${baseUrl}/api/notes?classLevel=${classLevel}&author=${encodeURIComponent(username)}`);
             if (res.ok) {
                 const data = await res.json();
-                // Map DB schema to UI schema
-                const mapped = data.map((n: any) => ({
-                    id: n._id,
-                    title: n.title,
-                    content: n.content,
-                    author: n.author,
-                    isPublic: true,
-                    colorIndex: Math.floor(Math.random() * NOTE_COLORS.length),
-                    createdAt: new Date(n.createdAt).getTime(),
-                    updatedAt: new Date(n.createdAt).getTime(),
-                }));
+                setMyNotes(data.map(mapApiNote));
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const fetchCommunityNotes = async () => {
+        try {
+            const baseUrl = apiBaseUrl();
+            const res = await fetch(`${baseUrl}/api/notes?classLevel=${classLevel}&isPublic=true`);
+            if (res.ok) {
+                const data = await res.json();
+                const mapped = data.map(mapApiNote);
                 setCommunityNotes(mapped);
             }
         } catch (err) {
@@ -100,20 +117,9 @@ export default function Notes() {
     };
 
     useEffect(() => {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(localNotes));
-        } catch (err: any) {
-            if (err.name === 'QuotaExceededError') {
-                alert("Your local browser storage is full! Please delete some old Personal Notes or share large files via 'Class Notes' instead.");
-            } else {
-                console.error("Storage error:", err);
-            }
-        }
-    }, [localNotes]);
-
-    useEffect(() => {
+        fetchMyNotes();
         fetchCommunityNotes();
-    }, [classLevel]);
+    }, [classLevel, username]);
 
     const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
@@ -134,46 +140,68 @@ export default function Notes() {
         const content = newContent.trim();
         if (!content && pendingFiles.length === 0) return;
 
-        if (isPublic) {
-            // Save to DB
-            try {
-                const res = await fetch('http://localhost:5000/api/notes', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content, author: username, classLevel, isPublic: true, files: pendingFiles })
-                });
-                if (!res.ok) {
-                    const data = await res.json();
-                    alert(`Failed to add note: ${data.error || 'Server error'}\n${data.details || 'Please check MongoDB IP whitelist.'}`);
-                    return;
-                }
-                fetchCommunityNotes();
-                setActiveTab('community');
-            } catch (err: any) { 
-                console.error(err); 
-                alert(`Network error: ${err.message}`);
+        setIsSavingNote(true);
+        setNoteUploadProgress(0);
+        try {
+            const baseUrl = apiBaseUrl();
+            const xhr = new XMLHttpRequest();
+            const result = await new Promise<{ ok: boolean; status: number; data: any }>((resolve, reject) => {
+                xhr.open('POST', `${baseUrl}/api/notes`);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        setNoteUploadProgress(Math.round((event.loaded / event.total) * 100));
+                    }
+                };
+                xhr.onload = () => {
+                    try {
+                        const data = xhr.responseText ? JSON.parse(xhr.responseText) : {};
+                        resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                xhr.onerror = () => reject(new Error('Network error'));
+                xhr.send(JSON.stringify({ title, content, author: username, classLevel, isPublic, files: pendingFiles }));
+            });
+
+            if (!result.ok) {
+                alert(`Failed to add note: ${result.data?.error || 'Server error'}\n${result.data?.details || 'Please check MongoDB IP whitelist.'}`);
                 return;
             }
-        } else {
-            // Save locally
-            const note: Note = {
-                id: Date.now().toString(),
-                title, content, colorIndex: newColorIndex, files: pendingFiles,
-                createdAt: Date.now(), updatedAt: Date.now(), isPublic: false
-            };
-            setLocalNotes(prev => [note, ...prev]);
-            setActiveTab('my_notes');
+
+            await Promise.all([fetchMyNotes(), fetchCommunityNotes()]);
+            setActiveTab(isPublic ? 'community' : 'my_notes');
+            setNewTitle('');
+            setNewContent('');
+            setPendingFiles([]);
+            setIsPublic(false);
+            setShowAddForm(false);
+        } catch (err: any) { 
+            console.error(err); 
+            alert(`Network error: ${err.message}`);
+            return;
+        } finally {
+            setIsSavingNote(false);
+            setTimeout(() => setNoteUploadProgress(null), 400);
         }
-
-        setNewTitle(''); setNewContent(''); setNewColorIndex(0); setPendingFiles([]); setIsPublic(false); setShowAddForm(false);
     };
 
-    const deleteLocalNote = (id: string) => {
-        setLocalNotes(prev => prev.filter(n => n.id !== id));
-    };
-
-    const updateLocalNote = (id: string, field: 'title' | 'content', value: string) => {
-        setLocalNotes(prev => prev.map(n => n.id === id ? { ...n, [field]: value, updatedAt: Date.now() } : n));
+    const deleteMyNote = async (id: string) => {
+        try {
+            const baseUrl = apiBaseUrl();
+            const res = await fetch(`${baseUrl}/api/notes/${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                alert(`Failed to delete note: ${data.error || 'Server error'}`);
+                return;
+            }
+            fetchMyNotes();
+            fetchCommunityNotes();
+        } catch (err: any) {
+            console.error(err);
+            alert(`Network error: ${err.message}`);
+        }
     };
 
     // Feature 8: Generate Flashcards
@@ -252,7 +280,7 @@ export default function Notes() {
         }
     };
 
-    const activeNotes = activeTab === 'my_notes' ? localNotes : communityNotes;
+    const activeNotes = activeTab === 'my_notes' ? myNotes : communityNotes;
     const filtered = activeNotes.filter(n => n.title.toLowerCase().includes(search.toLowerCase()) || n.content.toLowerCase().includes(search.toLowerCase()));
 
     return (
@@ -273,12 +301,12 @@ export default function Notes() {
                         if (!showAddForm && activeTab === 'community') setIsPublic(true);
                     }}
                 >
-                    {showAddForm ? '✕ Cancel' : '+ New Note'}
+                    {showAddForm ? 'Cancel' : 'New Note'}
                 </button>
             </div>
 
             <div className="search-bar">
-                <span className="search-icon">🔍</span>
+                <span className="search-icon"><Search size={14} /></span>
                 <input className="form-input" type="text" placeholder="Search notes..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
 
@@ -288,17 +316,31 @@ export default function Notes() {
                     <textarea className="form-textarea" placeholder="Write your note..." value={newContent} onChange={e => setNewContent(e.target.value)} rows={4} />
                     
                     <div className="file-upload-area" onClick={() => fileInputRef.current?.click()}>
-                        <span>📎 Attach files</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}><Paperclip size={14} /> Attach files</span>
                         <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={handleFilePick} />
                     </div>
                     {pendingFiles.length > 0 && (
                         <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                             {pendingFiles.map((pf, idx) => (
-                                <span key={idx} style={{ padding: '5px 10px', background: '#333', borderRadius: '5px', fontSize: '0.85rem' }}>
+                                <span key={idx} style={{ padding: '5px 10px', background: '#333', borderRadius: '5px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                     {fileIcon(pf.type)} {pf.name} ({formatSize(pf.size)})
-                                    <button type="button" onClick={() => setPendingFiles(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', marginLeft: '5px' }}>✕</button>
+                                    <button type="button" onClick={() => setPendingFiles(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', marginLeft: '5px', display: 'inline-flex', alignItems: 'center' }}><X size={14} /></button>
                                 </span>
                             ))}
+                        </div>
+                    )}
+
+                    {noteUploadProgress !== null && (
+                        <div style={{ marginTop: '15px', padding: '14px 16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.95rem' }}>
+                                    {isSavingNote ? 'Uploading note to cloud...' : 'Upload complete'}
+                                </span>
+                                <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.95rem' }}>{noteUploadProgress}%</span>
+                            </div>
+                            <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '999px', overflow: 'hidden' }}>
+                                <div style={{ width: `${noteUploadProgress}%`, height: '100%', background: '#fff', transition: 'width 0.2s ease' }} />
+                            </div>
                         </div>
                     )}
 
@@ -310,25 +352,14 @@ export default function Notes() {
                             </>
                         ) : (
                             <span style={{ color: '#fff', fontSize: '0.9rem' }}>
-                                <span style={{ marginRight: '8px' }}>✓</span> This note will be published publicly to {classLevel}.
+                                <span style={{ marginRight: '8px', display: 'inline-flex', verticalAlign: 'middle' }}><Check size={14} /></span> This note will be published publicly to {classLevel}.
                             </span>
                         )}
                     </div>
 
                     <div className="form-row" style={{ marginTop: '15px' }}>
-                        <div className="color-picker">
-                            {NOTE_ACCENTS.map((color, i) => (
-                                <button
-                                    key={i}
-                                    style={{ 
-                                        width: '32px', height: '32px', borderRadius: '50%', 
-                                        backgroundColor: color, border: newColorIndex === i ? '3px solid white' : 'none',
-                                        cursor: 'pointer', flexShrink: 0
-                                    }}
-                                    onClick={(e) => { e.preventDefault(); setNewColorIndex(i); }}
-                                />
-                            ))}</div>
-                        <button className="btn-primary" onClick={addNote}>Save {isPublic ? 'Public Note' : 'Note'}</button>
+                        <div style={{ color: '#8c8c8c', fontSize: '0.9rem' }}>Notes are saved to the cloud.</div>
+                        <button className="btn-primary" onClick={addNote} disabled={isSavingNote}>{isSavingNote ? 'Uploading...' : `Save ${isPublic ? 'Public Note' : 'Note'}`}</button>
                     </div>
                 </div>
             )}
@@ -365,11 +396,11 @@ export default function Notes() {
 
             <div className="notes-grid">
                 {filtered.map(note => (
-                    <div key={note.id} className="note-card" style={{ background: NOTE_COLORS[note.colorIndex], borderColor: NOTE_ACCENTS[note.colorIndex] }}>
+                    <div key={note.id} className="note-card" style={{ background: '#111111', borderColor: '#2b2b2b' }}>
                         <div className="note-card-header">
                             <h3 style={{ margin: 0 }}>{note.title}</h3>
                             {activeTab === 'my_notes' && (
-                                <button className="icon-btn-ghost" onClick={() => deleteLocalNote(note.id)}>✕</button>
+                                <button className="icon-btn-ghost" onClick={() => deleteMyNote(note.id)}><X size={16} /></button>
                             )}
                         </div>
                         {activeTab === 'community' && <small style={{ color: '#888', display: 'block', marginBottom: '10px' }}>Shared by {note.author}</small>}
@@ -403,7 +434,7 @@ export default function Notes() {
                                 disabled={loadingFlashcards}
                                 style={{ backgroundColor: '#fff', color: '#000', border: '1px solid #ccc', padding: '8px 15px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }}
                             >
-                                {loadingFlashcards ? 'Generating...' : '⚡ AI Flashcards'}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>{loadingFlashcards ? 'Generating...' : <><Sparkles size={14} /> AI Flashcards</>}</span>
                             </button>
                         </div>
                     </div>

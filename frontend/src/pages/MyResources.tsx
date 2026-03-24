@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Link2, Paperclip, X, Trash2, FileImage, FileText, FileSpreadsheet, Video, Music, PaperclipIcon } from 'lucide-react';
 
 const STORAGE_KEY = 'primearc_resources';
 
 const CATEGORIES = ['All', 'Study', 'Tools', 'Videos', 'Articles', 'Docs', 'Other'];
 const CATEGORY_ICONS: Record<string, string> = {
-    'Study': '📚', 'Tools': '🔧', 'Videos': '🎬',
-    'Articles': '📰', 'Docs': '📄', 'Other': '🔗'
+    'Study': 'ST', 'Tools': 'TL', 'Videos': 'VD',
+    'Articles': 'AR', 'Docs': 'DC', 'Other': 'OT'
 };
 const MAX_FILE_SIZE_MB = 10;
 
@@ -34,13 +35,12 @@ const formatSize = (bytes: number) => {
 };
 
 const fileIcon = (type: string) => {
-    if (type.startsWith('image/')) return '🖼️';
-    if (type === 'application/pdf') return '📄';
-    if (type.includes('word')) return '📝';
-    if (type.includes('sheet') || type.includes('excel')) return '📊';
-    if (type.startsWith('video/')) return '🎬';
-    if (type.startsWith('audio/')) return '🎵';
-    return '📎';
+    if (type.startsWith('image/')) return <FileImage size={16} />;
+    if (type === 'application/pdf' || type.includes('word')) return <FileText size={16} />;
+    if (type.includes('sheet') || type.includes('excel')) return <FileSpreadsheet size={16} />;
+    if (type.startsWith('video/')) return <Video size={16} />;
+    if (type.startsWith('audio/')) return <Music size={16} />;
+    return <PaperclipIcon size={16} />;
 };
 
 const isValidUrl = (url: string) => {
@@ -169,7 +169,7 @@ const MyResources = () => {
                     <p className="page-subtitle">{resources.length} resource{resources.length !== 1 ? 's' : ''} saved</p>
                 </div>
                 <button className="btn-primary" onClick={() => setShowForm(!showForm)}>
-                    {showForm ? '✕ Cancel' : '+ Add Resource'}
+                    {showForm ? 'Cancel' : 'Add Resource'}
                 </button>
             </div>
 
@@ -181,11 +181,11 @@ const MyResources = () => {
                         <button
                             className={`mode-btn ${addMode === 'link' ? 'active' : ''}`}
                             onClick={() => { setAddMode('link'); setFileError(''); setSelectedFile(null); }}
-                        >🔗 Add Link</button>
+                        ><span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}><Link2 size={14} /> Add Link</span></button>
                         <button
                             className={`mode-btn ${addMode === 'file' ? 'active' : ''}`}
                             onClick={() => { setAddMode('file'); setUrlError(''); }}
-                        >📎 Upload File</button>
+                        ><span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}><Paperclip size={14} /> Upload File</span></button>
                     </div>
 
                     <div className="form-row" style={{ gap: '12px' }}>
@@ -229,7 +229,7 @@ const MyResources = () => {
                                         {selectedFile.type.startsWith('image/') ? (
                                             <img src={selectedFile.dataUrl} alt="" className="preview-thumb" />
                                         ) : (
-                                            <div className="file-icon-large">{fileIcon(selectedFile.type)}</div>
+                                            <div className="file-icon-large" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{fileIcon(selectedFile.type)}</div>
                                         )}
                                         <div className="file-info">
                                             <span className="file-name">{selectedFile.name}</span>
@@ -238,11 +238,11 @@ const MyResources = () => {
                                         <button
                                             className="icon-btn-ghost"
                                             onClick={e => { e.stopPropagation(); setSelectedFile(null); setFileError(''); }}
-                                        >✕</button>
+                                        ><X size={16} /></button>
                                     </div>
                                 ) : (
                                     <>
-                                        <div className="drop-icon">⬆️</div>
+                                        <div className="drop-icon">FILE</div>
                                         <p className="drop-text">Drop a file here or <span className="drop-browse">browse</span></p>
                                         <p className="drop-hint">Max {MAX_FILE_SIZE_MB}MB · Any file type</p>
                                     </>
@@ -286,7 +286,7 @@ const MyResources = () => {
             {/* Resources Grid */}
             {filtered.length === 0 ? (
                 <div className="empty-state">
-                    <div className="empty-icon">🔗</div>
+                    <div className="empty-icon">LINK</div>
                     <p>{activeCategory !== 'All' ? `No ${activeCategory} resources yet.` : 'Save your first resource!'}</p>
                 </div>
             ) : (
@@ -326,7 +326,7 @@ const MyResources = () => {
                                         Open Link ↗
                                     </a>
                                 )}
-                                <button className="btn-danger icon-btn" onClick={() => deleteResource(res.id)}>🗑</button>
+                                <button className="btn-danger icon-btn" onClick={() => deleteResource(res.id)}><Trash2 size={14} /></button>
                             </div>
                         </div>
                     ))}

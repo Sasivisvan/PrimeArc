@@ -1,6 +1,7 @@
 import React from 'react';
 import { useUser } from '../context/UserContext';
 import { useNavigate } from 'react-router-dom';
+import { GraduationCap } from 'lucide-react';
 
 const MOCK_USERS = [
     { id: 'u_faculty', name: 'AIE Faculty', role: 'Teacher', classLevel: 'AIE' },
@@ -38,7 +39,7 @@ export default function Login() {
                             onMouseEnter={e => { e.currentTarget.style.borderColor = '#fff'; e.currentTarget.style.backgroundColor = '#222'; }}
                             onMouseLeave={e => { e.currentTarget.style.borderColor = '#333'; e.currentTarget.style.backgroundColor = '#111'; }}
                         >
-                            <div style={{ fontSize: '1.8rem' }}>👨‍🏫</div>
+                            <div style={{ display: 'inline-flex', alignItems: 'center' }}><GraduationCap size={24} /></div>
                             <div>
                                 <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'white' }}>{teacher.name}</h3>
                                 <p style={{ margin: '4px 0 0 0', color: '#ccc', fontSize: '0.85rem', fontWeight: 'bold' }}>All-Access Granted</p>

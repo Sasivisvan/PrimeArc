@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useUser } from '../context/UserContext';
 
 interface Comment {
@@ -18,6 +18,15 @@ interface ContentItem {
     tags: string[];
     upvotes: number;
     comments: Comment[];
+    studyProgress?: {
+        user: string;
+        pages: number[];
+        updatedAt?: string;
+    }[];
+    extractedText?: {
+        page: number;
+        content: string;
+    }[];
     createdAt: string;
     localFileDemo?: { name: string; size: number };
 }
@@ -26,7 +35,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize2, Download } from 'lucide-react';
+import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Download, Bot, Sparkles, Trophy, Upload, FileText, User, Trash2, Eye, MessageSquare, FolderOpen, AlertCircle, SendHorizontal, CheckSquare, Square } from 'lucide-react';
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
@@ -95,11 +104,24 @@ export default function Content() {
     const [numPages, setNumPages] = useState<number | null>(null);
     const [pageNumber, setPageNumber] = useState<number>(1);
     const [scale, setScale] = useState<number>(1.2);
+    const [currentPageText, setCurrentPageText] = useState('');
+    const [currentPageImage, setCurrentPageImage] = useState<string | null>(null);
+    const [studiedPages, setStudiedPages] = useState<number[]>([]);
+    const [isSavingStudyProgress, setIsSavingStudyProgress] = useState(false);
     
     const [commentText, setCommentText] = useState('');
     const [commentPage, setCommentPage] = useState('');
+    const viewerPageRef = useRef<HTMLDivElement | null>(null);
+
+    const jumpToPage = (targetPage?: number) => {
+        if (!targetPage || !Number.isFinite(targetPage) || targetPage < 1) return;
+        const nextPage = numPages ? Math.min(numPages, targetPage) : targetPage;
+        setPageNumber(nextPage);
+    };
 
     const aiChatStorageKey = `primearc_ai_chat_${classLevel}_${username || 'anonymous'}_${activeViewerId || 'none'}`;
+    const activeViewerItem = activeViewerId ? contents.find(c => c._id === activeViewerId) : null;
+    const activeViewerUsesHostedFile = !!activeViewerItem?.link && /\/api\/content-files\/[a-f0-9]{32}\.pdf/i.test(activeViewerItem.link);
 
     const fetchContent = async () => {
         try {
@@ -160,6 +182,60 @@ export default function Content() {
             setCommentPage(String(pageNumber));
         }
     }, [activeViewerId, viewerTab, pageNumber]);
+
+    useEffect(() => {
+        if (!activeViewerId) {
+            setCurrentPageText('');
+            setCurrentPageImage(null);
+            setStudiedPages([]);
+        }
+    }, [activeViewerId]);
+
+    useEffect(() => {
+        if (!activeViewerItem || !username) {
+            setStudiedPages([]);
+            return;
+        }
+
+        const userProgress = activeViewerItem.studyProgress?.find((entry) => entry.user === username);
+        const pages = Array.isArray(userProgress?.pages)
+            ? userProgress!.pages
+                .map((page) => Number(page))
+                .filter((page) => Number.isInteger(page) && page > 0)
+                .sort((a, b) => a - b)
+            : [];
+        setStudiedPages(pages);
+    }, [activeViewerItem, username]);
+
+    useEffect(() => {
+        if (!activeViewerId) return;
+
+        const handleViewerKeydown = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null;
+            const tagName = target?.tagName;
+            const isTypingTarget =
+                target?.isContentEditable ||
+                tagName === 'INPUT' ||
+                tagName === 'TEXTAREA' ||
+                tagName === 'SELECT';
+
+            if (isTypingTarget) return;
+
+            if (event.key === 'ArrowLeft' || event.key === 'a' || event.key === 'A') {
+                event.preventDefault();
+                jumpToPage(pageNumber - 1);
+                return;
+            }
+
+            if (event.key === 'ArrowRight' || event.key === 'd' || event.key === 'D') {
+                event.preventDefault();
+                jumpToPage(pageNumber + 1);
+            }
+        };
+
+        window.addEventListener('keydown', handleViewerKeydown);
+        return () => window.removeEventListener('keydown', handleViewerKeydown);
+    }, [activeViewerId, pageNumber, numPages]);
 
     const handleToggleForm = () => {
         if (showUploadForm && (title || link || simulatedFile || selectedTags.length > 0)) {
@@ -360,7 +436,10 @@ export default function Content() {
                 body: JSON.stringify({ 
                     prompt: currentPrompt, 
                     contentId: activeViewerId,
-                    history: historyForRequest 
+                    history: historyForRequest,
+                    pageNumber,
+                    pageText: currentPageText,
+                    imageBase64: currentPageImage
                 })
             });
             const data = await res.json();
@@ -381,6 +460,33 @@ export default function Content() {
         setPageNumber(1);
     }
 
+    const captureCurrentPageContext = () => {
+        const container = viewerPageRef.current;
+        if (!container) return;
+
+        const textSpans = Array.from(container.querySelectorAll('.react-pdf__Page__textContent span'));
+        const text = textSpans
+            .map((span) => (span.textContent || '').trim())
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        setCurrentPageText(text);
+
+        const canvas = container.querySelector('canvas');
+        if (!canvas) {
+            setCurrentPageImage(null);
+            return;
+        }
+
+        try {
+            const image = canvas.toDataURL('image/jpeg', 0.72);
+            setCurrentPageImage(image);
+        } catch {
+            setCurrentPageImage(null);
+        }
+    };
+
     const toggleTag = (tag: string) => {
         setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
     };
@@ -393,6 +499,60 @@ export default function Content() {
         } catch(err) { console.error(err); }
     };
 
+    const persistStudyProgress = async (contentId: string, pages: number[]) => {
+        if (!username) return;
+        setIsSavingStudyProgress(true);
+        try {
+            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
+            const res = await fetch(`${baseUrl}/api/content/${contentId}/study-progress`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: username, pages })
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || 'Failed to save study progress');
+            }
+            fetchContent();
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsSavingStudyProgress(false);
+        }
+    };
+
+    const buildQuizSourceText = (item: ContentItem) => {
+        const sections: string[] = [];
+        const pageText = currentPageText.trim();
+        const extractedSections = (item.extractedText || [])
+            .map((entry) => {
+                const normalized = entry.content?.replace(/\s+/g, ' ').trim();
+                return normalized ? `[Page ${entry.page}] ${normalized}` : '';
+            })
+            .filter(Boolean);
+
+        if (pageText) {
+            sections.push(`Current visible page (${pageNumber}): ${pageText}`);
+        }
+        if (extractedSections.length > 0) {
+            sections.push(`Document text:\n${extractedSections.join('\n\n')}`);
+        }
+
+        const combined = sections.join('\n\n').trim();
+        return combined.slice(0, 24000);
+    };
+
+    const toggleStudiedPage = async () => {
+        if (!activeViewerItem || !username) return;
+        if (activeViewerItem._id.toString().startsWith('local_')) return;
+        const isStudied = studiedPages.includes(pageNumber);
+        const nextPages = isStudied
+            ? studiedPages.filter((page) => page !== pageNumber)
+            : [...studiedPages, pageNumber].sort((a, b) => a - b);
+        setStudiedPages(nextPages);
+        await persistStudyProgress(activeViewerItem._id, nextPages);
+    };
+
     const handleGenerateQuiz = async () => {
         if (!activeViewerId) return;
         const item = contents.find(c => c._id === activeViewerId);
@@ -401,11 +561,17 @@ export default function Content() {
         setIsGeneratingQuiz(true);
         try {
             const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
+            const sourceText = buildQuizSourceText(item);
             const res = await fetch(`${baseUrl}/api/generate-quiz`, {
                 method: 'POST',
                 headers:{ 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    contentId: item._id,
                     topic: `Questions based on the educational document titled: ${item.title}`,
+                    documentTitle: item.title,
+                    pageNumber,
+                    pageText: currentPageText,
+                    text: sourceText,
                     difficulty: quizDifficulty,
                     numQuestions: quizCount
                 })
@@ -464,21 +630,26 @@ export default function Content() {
         ? contents.filter(c => c.tags && c.tags.includes(activeFilter))
         : contents;
 
-    const activeViewerItem = activeViewerId ? contents.find(c => c._id === activeViewerId) : null;
+    const isCurrentPageStudied = studiedPages.includes(pageNumber);
 
     if (activeViewerItem) {
         const isLocal = activeViewerItem._id.toString().startsWith('local_');
         return (
             <div className="flex flex-col h-full w-full bg-gradient-to-b from-black to-gray-900 text-white absolute inset-0 z-50 overflow-hidden">
                 {/* Top Bar */}
-                <div className="glass flex items-center justify-between p-4 w-full">
+                <div className="glass flex items-center justify-between p-4 w-full gap-4">
                     <button
                         onClick={() => { setActiveViewerId(null); setViewerTab('qa'); }}
                         className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-md text-sm font-medium transition-colors"
                     >
-                        ← Back
+                        Back
                     </button>
-                    <h2 className="text-xl font-bold truncate max-w-2xl">{activeViewerItem.title}</h2>
+                    <div className="flex items-center gap-3 min-w-0 flex-1 justify-center">
+                        <h2 className="text-xl font-bold truncate max-w-2xl text-center">{activeViewerItem.title}</h2>
+                        <span className="text-xs font-bold px-3 py-1 rounded-full border border-white/10 bg-white/5 text-gray-300 whitespace-nowrap">
+                            {studiedPages.length}/{numPages || '...'} Studied
+                        </span>
+                    </div>
                     <a href={activeViewerItem.link} target="_blank" rel="noreferrer" className="text-sm text-gray-400 hover:text-white underline">
                         Open externally
                     </a>
@@ -522,10 +693,28 @@ export default function Content() {
                             <a href={activeViewerItem.link} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-white/10 rounded-full transition-colors">
                                 <Download className="w-4 h-4" />
                             </a>
+                            {username && (
+                                <>
+                                    <div className="w-px h-4 bg-white/10 mx-1" />
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleStudiedPage();
+                                        }}
+                                        disabled={isLocal}
+                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-[0.18em] transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${isCurrentPageStudied ? 'bg-white text-black' : 'bg-white/5 text-gray-300 border border-white/10 hover:bg-white/10'}`}
+                                        title="Mark current page as studied"
+                                    >
+                                        {isCurrentPageStudied ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                                        {isSavingStudyProgress ? 'Saving' : 'Studied'}
+                                    </button>
+                                </>
+                            )}
                         </div>
 
                         <div className="flex-1 overflow-auto flex flex-col items-center py-10 scrollbar-hide">
-                            <div className="shadow-2xl shadow-black ring-1 ring-white/10">
+                            <div ref={viewerPageRef} className="shadow-2xl shadow-black ring-1 ring-white/10">
                                 <Document
                                     file={contentPdfDocumentSrc(activeViewerItem.link)}
                                     onLoadSuccess={onDocumentLoadSuccess}
@@ -537,7 +726,12 @@ export default function Content() {
                                     }
                                     error={
                                         <div className="p-20 text-center">
-                                            <p className="text-red-400 font-bold mb-4">Error loading document</p>
+                                            <p className="text-red-400 font-bold mb-3">Document unavailable</p>
+                                            <p className="text-gray-400 text-sm mb-5 max-w-md">
+                                                {activeViewerUsesHostedFile
+                                                    ? 'The PDF could not be read from PrimeArc storage. Try opening it directly or re-uploading the file.'
+                                                    : 'This external PDF link is unavailable or expired. Re-upload the PDF to PrimeArc storage instead of relying on a temporary external link.'}
+                                            </p>
                                             <a href={activeViewerItem.link} target="_blank" rel="noreferrer" className="px-6 py-2 bg-white text-black rounded-full font-bold">Open Direct Link</a>
                                         </div>
                                     }
@@ -545,6 +739,11 @@ export default function Content() {
                                     <Page 
                                         pageNumber={pageNumber} 
                                         scale={scale} 
+                                        onRenderSuccess={() => {
+                                            requestAnimationFrame(() => {
+                                                requestAnimationFrame(captureCurrentPageContext);
+                                            });
+                                        }}
                                         renderAnnotationLayer={false}
                                         renderTextLayer={true}
                                         className="rounded-sm overflow-hidden"
@@ -561,7 +760,7 @@ export default function Content() {
                                 onClick={() => setViewerTab('qa')}
                                 className={`flex-1 py-4 text-xs font-bold border-b-2 transition-colors ${viewerTab === 'qa' ? 'border-white text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
                             >
-                                Community Q&A
+                                Q&A Section
                             </button>
                             <button
                                 onClick={() => setViewerTab('ai')}
@@ -582,6 +781,10 @@ export default function Content() {
                         {viewerTab === 'qa' && (
                             <div className="p-4 flex flex-col h-full absolute inset-0">
                                 <div className="flex-1 overflow-y-auto flex flex-col gap-4 mb-4 pr-2">
+                                    <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                                        <h3 className="text-white font-bold text-sm">Questions & Discussion</h3>
+                                        <p className="text-gray-400 text-xs mt-1">Ask questions about this material and discuss page-specific points with the class.</p>
+                                    </div>
                                     {(!activeViewerItem.comments || activeViewerItem.comments.length === 0) ? (
                                         <div className="text-center mt-10">
                                             <p className="text-gray-300 font-bold mb-1">No questions yet</p>
@@ -598,7 +801,16 @@ export default function Content() {
                                                         <span className="font-bold text-sm text-white">{c.user}</span>
                                                         <span className="text-[10px] text-gray-500 uppercase tracking-wider">Student</span>
                                                     </div>
-                                                    {c.page !== undefined && <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded-full text-gray-300 border border-white/10 ml-auto font-medium">Pg {c.page}</span>}
+                                                    {c.page !== undefined && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => jumpToPage(c.page)}
+                                                            className="text-[10px] bg-white/10 px-2 py-0.5 rounded-full text-gray-300 border border-white/10 ml-auto font-medium hover:bg-white hover:text-black transition-colors"
+                                                            title={`Go to page ${c.page}`}
+                                                        >
+                                                            Pg {c.page}
+                                                        </button>
+                                                    )}
                                                 </div>
                                                 <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap pl-10 border-l border-white/5 group-hover:border-white/20 transition-colors">{c.text}</p>
                                             </div>
@@ -630,7 +842,7 @@ export default function Content() {
                                 <div className="flex-1 overflow-y-auto flex flex-col gap-4 mb-4 pr-2">
                                     {aiMessages.length === 0 && (
                                         <div className="text-center mt-10">
-                                            <div className="text-3xl mb-3">🤖</div>
+                                            <div className="text-3xl mb-3 flex justify-center"><Bot size={28} /></div>
                                             <p className="text-white font-bold mb-1">AI Assistant</p>
                                             <p className="text-sm text-gray-400">Ask me to summarize this document, explain concepts, or extract key notes.</p>
                                         </div>
@@ -661,7 +873,7 @@ export default function Content() {
                                         className="flex-1 bg-white/5 border border-white/20 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-white focus:bg-white/10 transition-all disabled:opacity-50"
                                     />
                                     <button type="submit" disabled={isAiLoading} className="px-4 py-2 bg-white text-black font-bold rounded-lg hover:bg-gray-200 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 shadow-lg shadow-white/5">
-                                        ↑
+                                        <SendHorizontal size={16} />
                                     </button>
                                 </form>
                             </div>
@@ -691,7 +903,7 @@ export default function Content() {
                                                     </select>
                                                 </div>
                                                 <button onClick={handleGenerateQuiz} disabled={isGeneratingQuiz} className="w-full mt-2 py-2.5 bg-white text-black text-sm font-bold rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50">
-                                                    {isGeneratingQuiz ? 'Generating...' : '✨ Generate AI Quiz'}
+                                                    {isGeneratingQuiz ? 'Generating...' : <span className="inline-flex items-center gap-2 justify-center"><Sparkles className="w-4 h-4" /> Generate AI Quiz</span>}
                                                 </button>
                                             </div>
                                         </div>
@@ -718,7 +930,7 @@ export default function Content() {
                                     </div>
                                 ) : (
                                     <div className="flex flex-col gap-4 w-full pb-8">
-                                        <button onClick={() => { setActiveQuiz(null); setQuizResult(null); }} className="self-start text-xs text-gray-400 hover:text-white pb-2">← Back to Quizzes</button>
+                                        <button onClick={() => { setActiveQuiz(null); setQuizResult(null); }} className="self-start text-xs text-gray-400 hover:text-white pb-2">Back to Quizzes</button>
                                         
                                         {!quizResult ? (
                                             <div className="flex flex-col gap-6">
@@ -741,7 +953,7 @@ export default function Content() {
                                             </div>
                                         ) : (
                                             <div className="flex flex-col gap-6 items-center text-center py-8">
-                                                <div className="text-5xl mb-2">{quizResult.score >= 80 ? '🏆' : quizResult.score >= 50 ? '👍' : '📚'}</div>
+                                                <div className="text-5xl mb-2 flex justify-center"><Trophy className="w-10 h-10" /></div>
                                                 <h3 className="text-2xl font-bold text-white">{quizResult.score}%</h3>
                                                 <p className="text-gray-400">You got {quizResult.correct} out of {quizResult.total} questions correct.</p>
                                                 
@@ -797,7 +1009,7 @@ export default function Content() {
             </div>
 
             {/* Tag Filter Bar */}
-            <div className="flex gap-2 mb-10 overflow-x-auto pb-2 scrollbar-hide">
+            <div className="flex flex-wrap gap-2 mb-10">
                 <button 
                     onClick={() => setActiveFilter(null)}
                     className={`px-5 py-1.5 rounded-full border transition-all text-sm font-medium whitespace-nowrap ${activeFilter === null ? 'bg-white text-black border-white' : 'border-white/10 text-gray-400 hover:border-white/30 hover:text-white'}`}
@@ -818,7 +1030,7 @@ export default function Content() {
             {showUploadForm && (
                 <div className="glass p-8 mb-10 border border-white/10 rounded-3xl animate-in fade-in slide-in-from-top-4 duration-300">
                     <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-                        <span className="p-1.5 bg-white/10 rounded-lg text-lg">📤</span>
+                        <span className="p-1.5 bg-white/10 rounded-lg text-lg inline-flex"><Upload className="w-4 h-4" /></span>
                         Share Material
                     </h2>
                     <form onSubmit={handleUpload} className="flex flex-col gap-6">
@@ -890,6 +1102,16 @@ export default function Content() {
             <div className="flex flex-col gap-6">
                 {filteredContents.map(item => {
                     const isLocal = item._id.toString().startsWith('local_');
+                    const userProgress = item.studyProgress?.find((entry) => entry.user === username);
+                    const completedPages = Array.isArray(userProgress?.pages)
+                        ? Array.from(
+                            new Set(
+                                userProgress.pages
+                                    .map((page) => Number(page))
+                                    .filter((page) => Number.isInteger(page) && page > 0)
+                            )
+                        ).length
+                        : 0;
                     return (
                         <div key={item._id} className="glass-card overflow-hidden group">
                             <div className="p-6 flex flex-col sm:flex-row justify-between items-start gap-6">
@@ -898,7 +1120,7 @@ export default function Content() {
                                         {item.tags?.map(tag => (
                                             <span key={tag} className="px-3 py-1 bg-white/10 border border-white/5 rounded-full text-[10px] font-bold uppercase tracking-wider text-gray-300">{tag}</span>
                                         ))}
-                                        {isLocal && <span className="px-3 py-1 bg-white/5 rounded-full text-[10px] font-bold uppercase tracking-wider text-gray-500">📄 Offline Demo</span>}
+                                        {isLocal && <span className="px-3 py-1 bg-white/5 rounded-full text-[10px] font-bold uppercase tracking-wider text-gray-500 inline-flex items-center gap-1"><FileText className="w-3 h-3" /> Offline Demo</span>}
                                     </div>
                                     <h3 className="text-2xl font-bold mb-2 group-hover:text-white/90 transition-colors">
                                         <a href={item.link} target="_blank" rel="noopener noreferrer" onClick={(e) => { 
@@ -910,13 +1132,18 @@ export default function Content() {
                                         }} className="hover:underline underline-offset-4 decoration-white/20">{item.title}</a>
                                     </h3>
                                     <p className="text-gray-500 text-sm flex items-center gap-2">
-                                        <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white">👤</span>
+                                        <span className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center text-[10px] text-white"><User className="w-3 h-3" /></span>
                                         {item.uploadedBy} • {new Date(item.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                                     </p>
+                                    {username && !isLocal && (
+                                        <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-gray-400">
+                                            {completedPages} page{completedPages === 1 ? '' : 's'} completed
+                                        </p>
+                                    )}
                                     
                                     {item.localFileDemo && (
                                         <div className="mt-4 p-3 bg-black/20 border border-white/5 rounded-xl flex items-center gap-3 text-xs text-gray-400">
-                                            <span className="text-lg">📄</span>
+                                            <span className="text-lg inline-flex"><FileText className="w-4 h-4" /></span>
                                             <div className="flex flex-col">
                                                 <span className="text-gray-300 font-medium">{item.localFileDemo.name}</span>
                                                 <span>{Math.round(item.localFileDemo.size / 1024)} KB</span>
@@ -929,7 +1156,7 @@ export default function Content() {
                                     <button onClick={() => handleUpvote(item._id, isLocal)} className="p-2 hover:bg-white/10 rounded-xl transition-all active:scale-90 text-xl" title="Upvote">▲</button>
                                     <span className="text-lg font-black text-white">{item.upvotes || 0}</span>
                                     {(role === 'Class Leader' || role === 'Teacher') && (
-                                        <button onClick={() => handleDelete(item._id, isLocal)} className="p-2 hover:bg-red-500/20 text-red-500/70 hover:text-red-500 rounded-xl transition-all active:scale-90" title="Delete Material">🗑️</button>
+                                        <button onClick={() => handleDelete(item._id, isLocal)} className="p-2 hover:bg-red-500/20 text-red-500/70 hover:text-red-500 rounded-xl transition-all active:scale-90 inline-flex" title="Delete Material"><Trash2 className="w-4 h-4" /></button>
                                     )}
                                 </div>
                             </div>
@@ -944,7 +1171,7 @@ export default function Content() {
                                     }}
                                     className="flex items-center gap-2.5 text-xs font-bold text-gray-400 hover:text-white transition-colors group/btn"
                                 >
-                                    <span className="text-lg group-hover/btn:scale-110 transition-transform">👁️</span> 
+                                    <span className="text-lg group-hover/btn:scale-110 transition-transform inline-flex"><Eye className="w-4 h-4" /></span> 
                                     {isLocal ? 'Offline Preview Only' : 'Immersive Viewer'}
                                 </button>
                                 <button 
@@ -956,7 +1183,7 @@ export default function Content() {
                                     }}
                                     className="flex items-center gap-2.5 text-xs font-bold text-gray-400 hover:text-white transition-colors group/btn"
                                 >
-                                    <span className="text-lg group-hover/btn:scale-110 transition-transform">💬</span>
+                                    <span className="text-lg group-hover/btn:scale-110 transition-transform inline-flex"><MessageSquare className="w-4 h-4" /></span>
                                     {item.comments?.length || 0} Questions & Discussion
                                 </button>
                             </div>
@@ -966,7 +1193,7 @@ export default function Content() {
 
                 {filteredContents.length === 0 && (
                    <div className="text-center py-20 bg-white/5 rounded-3xl border border-white/5 border-dashed">
-                       <div className="text-4xl mb-4 opacity-20">📂</div>
+                       <div className="text-4xl mb-4 opacity-20 flex justify-center"><FolderOpen className="w-8 h-8" /></div>
                        <p className="text-gray-500 font-medium italic">No materials found for {classLevel}. Be the first to upload!</p>
                    </div>
                 )}
@@ -976,7 +1203,7 @@ export default function Content() {
             {showDiscardModal && (
                 <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-in fade-in duration-200">
                     <div className="bg-[#1a1a1a] border border-white/10 p-8 rounded-3xl max-w-sm w-full shadow-2xl shadow-black text-center">
-                        <div className="text-5xl mb-4">⚠️</div>
+                        <div className="text-5xl mb-4 flex justify-center"><AlertCircle className="w-10 h-10" /></div>
                         <h3 className="text-xl font-bold text-white mb-2">Discard Upload?</h3>
                         <p className="text-gray-400 text-sm mb-8 leading-relaxed">
                             Are you sure you want to discard <strong>{simulatedFile ? simulatedFile.name : (title || 'this un-submitted material')}</strong>? All progress will be lost.

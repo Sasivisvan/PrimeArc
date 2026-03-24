@@ -7,10 +7,27 @@ interface Message {
     timestamp?: number;
 }
 
+type ModelChoice = 'gemini' | 'ollama';
+
+interface ChatSession {
+    id: string;
+    title: string;
+    model: ModelChoice;
+    createdAt: number;
+    updatedAt: number;
+    messages: Message[];
+}
+
+interface StoredChatState {
+    activeChatId: string;
+    chats: ChatSession[];
+}
+
 const BACKEND_URL = "http://localhost:5000";
 const makeChatStorageKey = (username: string | null) =>
-    `primearc_chat_session_${username || 'anonymous'}`;
+    `primearc_chat_sessions_${username || 'anonymous'}`;
 const MAX_STORED_MESSAGES = 100;
+const MAX_STORED_CHATS = 25;
 
 // ─── Markdown Renderer ───────────────────────────────────────────────────────
 const renderMarkdown = (text: string): React.ReactNode[] => {
@@ -38,7 +55,6 @@ const renderMarkdown = (text: string): React.ReactNode[] => {
     while (i < lines.length) {
         const line = lines[i];
 
-        // Fenced code block
         if (line.trimStart().startsWith('```')) {
             const lang = line.trim().replace(/^```/, '').trim() || 'code';
             const codeLines: string[] = [];
@@ -54,24 +70,24 @@ const renderMarkdown = (text: string): React.ReactNode[] => {
                         <span className="md-code-lang">{lang}</span>
                         <button className="md-copy-btn" onClick={() => {
                             navigator.clipboard.writeText(codeText);
-                        }}>📋 Copy</button>
+                        }}>Copy</button>
                     </div>
                     <pre className="md-pre"><code>{codeText}</code></pre>
                 </div>
             );
-            i++; continue;
+            i++;
+            continue;
         }
 
-        // Headings
         const headingMatch = line.match(/^(#{1,3})\s+(.+)/);
         if (headingMatch) {
             const level = headingMatch[1].length;
             const Tag = `h${level + 2}` as 'h3' | 'h4' | 'h5';
             nodes.push(<Tag key={i} className={`md-h${level}`}>{inlineFormat(headingMatch[2], `ih-${i}`)}</Tag>);
-            i++; continue;
+            i++;
+            continue;
         }
 
-        // Bullet list
         if (/^[\s]*[-*]\s/.test(line)) {
             const items: string[] = [];
             while (i < lines.length && /^[\s]*[-*]\s/.test(lines[i])) {
@@ -82,7 +98,6 @@ const renderMarkdown = (text: string): React.ReactNode[] => {
             continue;
         }
 
-        // Numbered list
         if (/^\d+\.\s/.test(line)) {
             const items: string[] = [];
             while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
@@ -93,19 +108,18 @@ const renderMarkdown = (text: string): React.ReactNode[] => {
             continue;
         }
 
-        // Horizontal rule
         if (/^---+$/.test(line.trim())) {
             nodes.push(<hr key={i} className="md-hr" />);
-            i++; continue;
+            i++;
+            continue;
         }
 
-        // Blank line
         if (line.trim() === '') {
             nodes.push(<div key={i} className="md-spacer" />);
-            i++; continue;
+            i++;
+            continue;
         }
 
-        // Paragraph
         nodes.push(<p key={i} className="md-p">{inlineFormat(line, `ip-${i}`)}</p>);
         i++;
     }
@@ -113,56 +127,227 @@ const renderMarkdown = (text: string): React.ReactNode[] => {
     return nodes;
 };
 
-// ─── Component ───────────────────────────────────────────────────────────────
-type ModelChoice = 'gemini' | 'ollama';
-
 const makeInitialMessage = (model: ModelChoice): Message => ({
     role: 'ai',
     content: model === 'ollama'
-        ? 'Hi! I\'m **PrimeArc AI**, running **offline** via Ollama (`qwen2.5:7b`). Ask me anything! 🦙\n\n*Responses stream token-by-token in real time.*'
-        : 'Hi! I\'m **PrimeArc AI**, powered by Gemini Flash. Ask me anything! 🚀\n\nI can help with:\n- Writing & editing\n- Code & debugging\n- Research & analysis\n- Learning & explanations',
+        ? 'PrimeArc AI is running offline via Ollama (`qwen2.5:7b`). Ask anything.\n\n*Responses stream token by token in real time.*'
+        : 'PrimeArc AI is powered by Gemini Flash.\n\nI can help with:\n- Writing and editing\n- Code and debugging\n- Research and analysis\n- Learning and explanations',
     timestamp: Date.now(),
 });
 
-const INITIAL_MESSAGE: Message = makeInitialMessage('gemini');
+const makeAiMessage = (content: string, timestamp = Date.now()): Message => ({
+    role: 'ai',
+    content,
+    timestamp
+});
+
+const buildChatTitle = (text: string) => {
+    const cleaned = text.replace(/\s+/g, ' ').trim();
+    if (!cleaned) return 'New Chat';
+    return cleaned.length > 36 ? `${cleaned.slice(0, 36)}...` : cleaned;
+};
+
+const createChatSession = (model: ModelChoice = 'gemini'): ChatSession => {
+    const now = Date.now();
+    return {
+        id: `chat_${now}_${Math.random().toString(36).slice(2, 8)}`,
+        title: 'New Chat',
+        model,
+        createdAt: now,
+        updatedAt: now,
+        messages: [makeInitialMessage(model)]
+    };
+};
+
+const parseStoredChats = (raw: string | null): StoredChatState | null => {
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || !Array.isArray(parsed.chats)) return null;
+
+        const chats = parsed.chats
+            .filter((chat: ChatSession) => chat && Array.isArray(chat.messages))
+            .slice(0, MAX_STORED_CHATS)
+            .map((chat: ChatSession) => ({
+                ...chat,
+                title: chat.title || 'New Chat',
+                model: chat.model === 'ollama' ? 'ollama' : 'gemini',
+                createdAt: chat.createdAt || Date.now(),
+                updatedAt: chat.updatedAt || Date.now(),
+                messages: chat.messages.slice(-MAX_STORED_MESSAGES)
+            }));
+
+        if (chats.length === 0) return null;
+
+        const activeChatId = chats.some((chat: ChatSession) => chat.id === parsed.activeChatId)
+            ? parsed.activeChatId
+            : chats[0].id;
+
+        return { activeChatId, chats };
+    } catch {
+        return null;
+    }
+};
 
 const Chat = () => {
     const [showRightPanel, setShowRightPanel] = useState(true);
     const [message, setMessage] = useState("");
-    const [model, setModel] = useState<ModelChoice>('gemini');
+    const [backendStatus, setBackendStatus] = useState<'online' | 'offline' | 'checking'>('checking');
     const [ollamaStatus, setOllamaStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+    const [isLoading, setIsLoading] = useState(false);
+    const [hasLoadedRemoteState, setHasLoadedRemoteState] = useState(false);
+    const [dbSyncAvailable, setDbSyncAvailable] = useState(true);
 
     const { username } = useUser();
-    const CHAT_STORAGE_KEY = makeChatStorageKey(username);
+    const chatStorageKey = makeChatStorageKey(username);
 
-    const [history, setHistory] = useState<Message[]>(() => {
-        try {
-            const saved = localStorage.getItem(CHAT_STORAGE_KEY);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-            }
-        } catch { /* ignore */ }
-        return [INITIAL_MESSAGE];
+    const [chatState, setChatState] = useState<StoredChatState>(() => {
+        const fallback = createChatSession('gemini');
+        return { activeChatId: fallback.id, chats: [fallback] };
     });
 
-    const [isLoading, setIsLoading] = useState(false);
-    const [backendStatus, setBackendStatus] = useState<'online' | 'offline' | 'checking'>('checking');
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     useEffect(() => {
+        let cancelled = false;
+
+        const loadChatState = async () => {
+            setHasLoadedRemoteState(false);
+
+            try {
+                const res = await fetch(`${BACKEND_URL}/chat-state?user=${encodeURIComponent(username || 'anonymous')}`);
+                if (!res.ok) throw new Error('remote chat state unavailable');
+                const remote = await res.json();
+                if (cancelled) return;
+
+                if (remote && Array.isArray(remote.chats) && remote.activeChatId) {
+                    const parsed = parseStoredChats(JSON.stringify(remote));
+                    if (parsed) {
+                        setChatState(parsed);
+                        setDbSyncAvailable(true);
+                        setHasLoadedRemoteState(true);
+                        return;
+                    }
+                }
+                setDbSyncAvailable(true);
+            } catch {
+                setDbSyncAvailable(false);
+            }
+
+            const saved = parseStoredChats(localStorage.getItem(chatStorageKey));
+            if (cancelled) return;
+            if (saved) {
+                setChatState(saved);
+            } else {
+                const fallback = createChatSession('gemini');
+                setChatState({ activeChatId: fallback.id, chats: [fallback] });
+            }
+            setHasLoadedRemoteState(true);
+        };
+
+        loadChatState();
+        return () => { cancelled = true; };
+    }, [chatStorageKey, username]);
+
+    useEffect(() => {
+        if (!hasLoadedRemoteState) return;
+
+        const sanitized: StoredChatState = {
+            activeChatId: chatState.activeChatId,
+            chats: chatState.chats
+                .slice(0, MAX_STORED_CHATS)
+                .map(chat => ({
+                    ...chat,
+                    messages: chat.messages.slice(-MAX_STORED_MESSAGES)
+                }))
+        };
+
         try {
-            const toStore = history.slice(-MAX_STORED_MESSAGES);
-            localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(toStore));
-        } catch { /* quota exceeded */ }
-    }, [history]);
+            localStorage.setItem(chatStorageKey, JSON.stringify(sanitized));
+        } catch {
+            // ignore quota errors
+        }
+
+        if (!dbSyncAvailable) return;
+
+        const timeoutId = window.setTimeout(async () => {
+            try {
+                const res = await fetch(`${BACKEND_URL}/chat-state`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user: username || 'anonymous',
+                        activeChatId: sanitized.activeChatId,
+                        chats: sanitized.chats
+                    })
+                });
+                if (!res.ok) throw new Error('save failed');
+            } catch {
+                setDbSyncAvailable(false);
+            }
+        }, 600);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [chatState, chatStorageKey, dbSyncAvailable, hasLoadedRemoteState, username]);
+
+    const activeChat = chatState.chats.find(chat => chat.id === chatState.activeChatId) || chatState.chats[0];
+    const history = activeChat?.messages || [];
+    const model = activeChat?.model || 'gemini';
+
+    const updateActiveChat = (updater: (chat: ChatSession) => ChatSession) => {
+        setChatState(prev => ({
+            ...prev,
+            chats: prev.chats.map(chat => chat.id === prev.activeChatId ? updater(chat) : chat)
+        }));
+    };
+
+    const createNewChat = (nextModel: ModelChoice = model) => {
+        const newChat = createChatSession(nextModel);
+        setChatState(prev => ({
+            activeChatId: newChat.id,
+            chats: [newChat, ...prev.chats].slice(0, MAX_STORED_CHATS)
+        }));
+        setMessage("");
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    };
+
+    const switchChat = (chatId: string) => {
+        setChatState(prev => ({ ...prev, activeChatId: chatId }));
+        setMessage("");
+    };
+
+    const deleteChat = (chatId: string) => {
+        setChatState(prev => {
+            const remaining = prev.chats.filter(chat => chat.id !== chatId);
+            if (remaining.length === 0) {
+                const fallback = createChatSession('gemini');
+                return { activeChatId: fallback.id, chats: [fallback] };
+            }
+            const activeChatId = prev.activeChatId === chatId ? remaining[0].id : prev.activeChatId;
+            return { activeChatId, chats: remaining };
+        });
+    };
+
+    const clearActiveHistory = () => {
+        if (!activeChat) return;
+        if (window.confirm('Clear this chat history?')) {
+            updateActiveChat(chat => ({
+                ...chat,
+                title: 'New Chat',
+                updatedAt: Date.now(),
+                messages: [makeInitialMessage(chat.model)]
+            }));
+        }
+    };
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
-    useEffect(() => { scrollToBottom(); }, [history, isLoading]);
+    useEffect(() => {
+        scrollToBottom();
+    }, [history, isLoading, activeChat?.id]);
 
     const autoResize = useCallback(() => {
         const ta = textareaRef.current;
@@ -171,44 +356,55 @@ const Chat = () => {
         ta.style.height = Math.min(ta.scrollHeight, 160) + 'px';
     }, []);
 
-    useEffect(() => { autoResize(); }, [message, autoResize]);
+    useEffect(() => {
+        autoResize();
+    }, [message, autoResize]);
 
-    // Check Node backend status
     useEffect(() => {
         const checkStatus = async () => {
             try {
                 const res = await fetch(`${BACKEND_URL}/`);
                 setBackendStatus(res.ok ? 'online' : 'offline');
-            } catch { setBackendStatus('offline'); }
+            } catch {
+                setBackendStatus('offline');
+            }
         };
         checkStatus();
     }, []);
 
-    // Check Ollama server status whenever model toggles
     useEffect(() => {
+        if (model !== 'ollama') {
+            setOllamaStatus('checking');
+            return;
+        }
+
         const checkOllama = async () => {
             setOllamaStatus('checking');
             try {
                 const res = await fetch('http://localhost:11434/api/tags');
                 setOllamaStatus(res.ok ? 'online' : 'offline');
-            } catch { setOllamaStatus('offline'); }
+            } catch {
+                setOllamaStatus('offline');
+            }
         };
+
         checkOllama();
     }, [model]);
 
-    const switchModel = (m: ModelChoice) => {
-        if (m === model) return;
-        setModel(m);
-        // Persist history seamlessly across offline/online toggles, simply injecting an alert.
-        setHistory(prev => [...prev, { 
-            role: 'ai', 
-            content: `*[System: Switched backend architecture to ${m === 'ollama' ? 'Ollama Offline 🦙' : 'Gemini Cloud Flash ✨'}]*`, 
-            timestamp: Date.now() 
-        }]);
+    const switchModel = (nextModel: ModelChoice) => {
+        if (!activeChat || nextModel === model) return;
+        updateActiveChat(chat => ({
+            ...chat,
+            model: nextModel,
+            updatedAt: Date.now(),
+            messages: [
+                ...chat.messages,
+                makeAiMessage(`*[System: Switched model to ${nextModel === 'ollama' ? 'Ollama Offline' : 'Gemini Flash'}]*`)
+            ]
+        }));
     };
 
-    // ── Gemini send (non-streaming) ──────────────────────────────────────────
-    const sendGemini = async (trimmed: string, newHistory: Message[]) => {
+    const sendGemini = async (trimmed: string, targetChatId: string, nextHistory: Message[]) => {
         try {
             const res = await fetch(`${BACKEND_URL}/chat`, {
                 method: "POST",
@@ -216,28 +412,55 @@ const Chat = () => {
                 body: JSON.stringify({
                     message: trimmed,
                     user: username,
-                    history: history.slice(-10).map(({ role, content }) => ({ role, content }))
+                    history: nextHistory.slice(-10).map(({ role, content }) => ({ role, content }))
                 })
             });
             const data = await res.json();
             const reply = data.reply || data.error || "No response received.";
-            setHistory([...newHistory, { role: 'ai', content: reply, timestamp: Date.now() }]);
+            setChatState(prev => ({
+                ...prev,
+                chats: prev.chats
+                    .map(chat => chat.id === targetChatId
+                        ? {
+                            ...chat,
+                            updatedAt: Date.now(),
+                            messages: [...nextHistory, makeAiMessage(reply)]
+                        }
+                        : chat)
+                    .sort((a, b) => b.updatedAt - a.updatedAt)
+            }));
             if (backendStatus !== 'online') setBackendStatus('online');
         } catch {
-            setHistory([...newHistory, {
-                role: 'ai',
-                content: "⚠️ Backend is offline. Please run `npm start` in the backend folder.",
-                timestamp: Date.now()
-            }]);
+            setChatState(prev => ({
+                ...prev,
+                chats: prev.chats
+                    .map(chat => chat.id === targetChatId
+                        ? {
+                            ...chat,
+                            updatedAt: Date.now(),
+                            messages: [...nextHistory, makeAiMessage("Backend is offline. Please run `npm run dev` in the backend folder.")]
+                        }
+                        : chat)
+                    .sort((a, b) => b.updatedAt - a.updatedAt)
+            }));
             setBackendStatus('offline');
         }
     };
 
-    // ── Ollama send (real-time streaming) ───────────────────────────────────
-    const sendOllama = async (trimmed: string, newHistory: Message[]) => {
+    const sendOllama = async (trimmed: string, targetChatId: string, nextHistory: Message[]) => {
         const aiMsgTs = Date.now();
-        // Insert empty placeholder AI message that we'll fill token-by-token
-        setHistory([...newHistory, { role: 'ai', content: '', timestamp: aiMsgTs }]);
+        setChatState(prev => ({
+            ...prev,
+            chats: prev.chats
+                .map(chat => chat.id === targetChatId
+                    ? {
+                        ...chat,
+                        updatedAt: aiMsgTs,
+                        messages: [...nextHistory, makeAiMessage('', aiMsgTs)]
+                    }
+                    : chat)
+                .sort((a, b) => b.updatedAt - a.updatedAt)
+        }));
 
         try {
             const res = await fetch(`${BACKEND_URL}/api/ollama/chat`, {
@@ -246,17 +469,24 @@ const Chat = () => {
                 body: JSON.stringify({
                     message: trimmed,
                     user: username,
-                    history: history.slice(-10).map(({ role, content }) => ({ role, content }))
+                    history: nextHistory.slice(-10).map(({ role, content }) => ({ role, content }))
                 })
             });
 
             if (!res.ok || !res.body) {
                 const errData = await res.json().catch(() => ({ error: "Ollama unavailable" }));
-                setHistory([...newHistory, {
-                    role: 'ai',
-                    content: `⚠️ ${errData.error || "Ollama server not reachable. Run: ollama serve"}`,
-                    timestamp: aiMsgTs
-                }]);
+                setChatState(prev => ({
+                    ...prev,
+                    chats: prev.chats
+                        .map(chat => chat.id === targetChatId
+                            ? {
+                                ...chat,
+                                updatedAt: Date.now(),
+                                messages: [...nextHistory, makeAiMessage(`${errData.error || "Ollama server not reachable. Run: ollama serve"}`, aiMsgTs)]
+                            }
+                            : chat)
+                        .sort((a, b) => b.updatedAt - a.updatedAt)
+                }));
                 return;
             }
 
@@ -269,58 +499,85 @@ const Chat = () => {
                 if (done) break;
 
                 const raw = decoder.decode(value, { stream: true });
-                // Each chunk may hold multiple newline-delimited JSON lines
                 for (const line of raw.split('\n')) {
                     if (!line.trim()) continue;
                     try {
                         const parsed = JSON.parse(line);
                         if (parsed.message?.content) {
                             accumulated += parsed.message.content;
-                            setHistory(prev => {
-                                const next = [...prev];
-                                next[next.length - 1] = { role: 'ai', content: accumulated, timestamp: aiMsgTs };
-                                return next;
-                            });
+                            setChatState(prev => ({
+                                ...prev,
+                                chats: prev.chats.map(chat => {
+                                    if (chat.id !== targetChatId) return chat;
+                                    const messages = [...chat.messages];
+                                    messages[messages.length - 1] = makeAiMessage(accumulated, aiMsgTs);
+                                    return {
+                                        ...chat,
+                                        updatedAt: Date.now(),
+                                        messages
+                                    };
+                                })
+                            }));
                         }
-                    } catch { /* partial line — skip */ }
+                    } catch {
+                        // ignore partial lines
+                    }
                 }
             }
         } catch {
-            setHistory([...newHistory, {
-                role: 'ai',
-                content: "⚠️ Could not reach Ollama. Make sure it's running: `ollama serve`",
-                timestamp: aiMsgTs
-            }]);
+            setChatState(prev => ({
+                ...prev,
+                chats: prev.chats
+                    .map(chat => chat.id === targetChatId
+                        ? {
+                            ...chat,
+                            updatedAt: Date.now(),
+                            messages: [...nextHistory, makeAiMessage("Could not reach Ollama. Make sure it is running: `ollama serve`", aiMsgTs)]
+                        }
+                        : chat)
+                    .sort((a, b) => b.updatedAt - a.updatedAt)
+            }));
         }
     };
 
     const sendMessage = async () => {
         const trimmed = message.trim();
-        if (!trimmed || isLoading) return;
+        if (!trimmed || isLoading || !activeChat) return;
 
-        const newUserMsg: Message = { role: 'user', content: trimmed, timestamp: Date.now() };
-        const newHistory = [...history, newUserMsg];
-        setHistory(newHistory);
+        const now = Date.now();
+        const targetChatId = activeChat.id;
+        const newUserMsg: Message = { role: 'user', content: trimmed, timestamp: now };
+        const nextHistory = [...activeChat.messages, newUserMsg];
+
+        setChatState(prev => ({
+            ...prev,
+            chats: prev.chats
+                .map(chat => chat.id === targetChatId
+                    ? {
+                        ...chat,
+                        title: chat.title === 'New Chat' ? buildChatTitle(trimmed) : chat.title,
+                        updatedAt: now,
+                        messages: nextHistory
+                    }
+                    : chat)
+                .sort((a, b) => b.updatedAt - a.updatedAt)
+        }));
         setMessage("");
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
         setIsLoading(true);
 
         try {
-            if (model === 'ollama') await sendOllama(trimmed, newHistory);
-            else await sendGemini(trimmed, newHistory);
+            if ((activeChat.model || 'gemini') === 'ollama') await sendOllama(trimmed, targetChatId, nextHistory);
+            else await sendGemini(trimmed, targetChatId, nextHistory);
         } finally {
             setIsLoading(false);
         }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    };
-
-    const clearHistory = () => {
-        if (window.confirm('Clear all chat history?')) {
-            setHistory([makeInitialMessage(model)]);
-            localStorage.removeItem(CHAT_STORAGE_KEY);
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
         }
     };
 
@@ -329,27 +586,83 @@ const Chat = () => {
         return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     };
 
+    const formatChatDate = (ts: number) => {
+        return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    };
+
     return (
         <React.Fragment>
             <nav className="nav-bar">
-                <h2 className="sidebar-header">Chat History</h2>
+                <div style={{ padding: '0 25px 16px 25px', borderBottom: '1px solid rgba(255,255,255,0.04)', marginBottom: '16px' }}>
+                    <h2 className="sidebar-header" style={{ padding: 0, marginBottom: '12px' }}>Chat History</h2>
+                    <button
+                        onClick={() => createNewChat()}
+                        style={{
+                            width: '100%',
+                            padding: '12px 14px',
+                            borderRadius: '12px',
+                            border: '1px solid rgba(255,255,255,0.12)',
+                            background: '#fff',
+                            color: '#000',
+                            fontWeight: 600,
+                            letterSpacing: '0.02em',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        New Chat
+                    </button>
+                </div>
+
                 <ul className="chat-list">
-                    <li className="chat-list-item active">🔥 Current Session</li>
-                    <li className="chat-list-item" onClick={clearHistory} style={{ cursor: 'pointer', color: '#ff4d6d44' }}>
-                        🗑 Clear History
-                    </li>
+                    {chatState.chats.map(chat => (
+                        <li
+                            key={chat.id}
+                            className={`chat-list-item ${chat.id === chatState.activeChatId ? 'active' : ''}`}
+                            onClick={() => switchChat(chat.id)}
+                        >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start' }}>
+                                <div style={{ minWidth: 0 }}>
+                                    <div style={{ color: 'inherit', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {chat.title}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: chat.id === chatState.activeChatId ? '#8f8fa7' : '#5d5d73', marginTop: '3px' }}>
+                                        {chat.model === 'ollama' ? 'Ollama' : 'Gemini'} • {Math.max(chat.messages.length - 1, 0)} msgs
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteChat(chat.id);
+                                    }}
+                                    style={{
+                                        border: 'none',
+                                        background: 'transparent',
+                                        color: '#777',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                        lineHeight: 1
+                                    }}
+                                    title="Delete chat"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                        </li>
+                    ))}
                 </ul>
+
                 <div style={{ padding: '0 25px', marginTop: 'auto' }}>
                     <p style={{ fontSize: '0.75rem', color: '#333', lineHeight: '1.5' }}>
-                        {history.length - 1} message{history.length !== 2 ? 's' : ''} in session<br />
-                        Saved locally ✓
+                        {chatState.chats.length} saved chat{chatState.chats.length !== 1 ? 's' : ''}<br />
+                        Local history enabled
                     </p>
                 </div>
             </nav>
 
             <main className="chat-main">
                 <button className="toggle-details-btn" onClick={() => setShowRightPanel(!showRightPanel)}>
-                    {showRightPanel ? '◀ Hide Panel' : '▶ Details'}
+                    {showRightPanel ? 'Hide Panel' : 'Show Details'}
                 </button>
 
                 <div className="message-list">
@@ -357,7 +670,7 @@ const Chat = () => {
                         <div key={index} className={`msg-wrapper ${msg.role}`}>
                             {msg.role === 'ai' && (
                                 <div className={`msg-avatar ai-avatar ${isLoading && index === history.length - 1 ? 'ai-loading-ring' : ''}`}>
-                                    {model === 'ollama' ? '🦙' : '✨'}
+                                    AI
                                 </div>
                             )}
                             <div className={`msg ${msg.role}`}>
@@ -369,14 +682,13 @@ const Chat = () => {
                                     <div className="msg-time">{formatTime(msg.timestamp)}</div>
                                 )}
                             </div>
-                            {msg.role === 'user' && <div className="msg-avatar user-avatar">You</div>}
+                            {msg.role === 'user' && <div className="msg-avatar user-avatar">YOU</div>}
                         </div>
                     ))}
 
-                    {/* Typing indicator only for Gemini (Ollama streams live into history) */}
                     {isLoading && model === 'gemini' && (
                         <div className="msg-wrapper ai">
-                            <div className="msg-avatar ai-avatar ai-loading-ring">✨</div>
+                            <div className="msg-avatar ai-avatar ai-loading-ring">AI</div>
                             <div className="msg ai typing-indicator">
                                 <span></span><span></span><span></span>
                             </div>
@@ -386,39 +698,38 @@ const Chat = () => {
                 </div>
 
                 <div className="input-area-container">
-                    {/* ── Model selector ── */}
                     <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', justifyContent: 'center' }}>
                         <button
                             onClick={() => switchModel('gemini')}
                             style={{
-                                padding: '5px 16px',
-                                borderRadius: '20px',
-                                border: model === 'gemini' ? '2px solid #7c3aed' : '1px solid #444',
-                                background: model === 'gemini' ? 'rgba(124,58,237,0.18)' : 'transparent',
-                                color: model === 'gemini' ? '#a78bfa' : '#666',
+                                padding: '8px 16px',
+                                borderRadius: '999px',
+                                border: model === 'gemini' ? '1px solid rgba(255,255,255,0.28)' : '1px solid rgba(255,255,255,0.1)',
+                                background: model === 'gemini' ? '#ffffff' : 'transparent',
+                                color: model === 'gemini' ? '#000000' : '#8c8c93',
                                 cursor: 'pointer',
                                 fontSize: '0.78rem',
-                                fontWeight: model === 'gemini' ? 700 : 400,
+                                fontWeight: 600,
                                 transition: 'all 0.2s',
                             }}
                         >
-                            ✨ Gemini Flash
+                            Gemini
                         </button>
                         <button
                             onClick={() => switchModel('ollama')}
                             style={{
-                                padding: '5px 16px',
-                                borderRadius: '20px',
-                                border: model === 'ollama' ? '2px solid #555' : '1px solid #333',
-                                background: model === 'ollama' ? '#111' : 'transparent',
-                                color: model === 'ollama' ? '#fff' : '#888',
+                                padding: '8px 16px',
+                                borderRadius: '999px',
+                                border: model === 'ollama' ? '1px solid rgba(255,255,255,0.28)' : '1px solid rgba(255,255,255,0.1)',
+                                background: model === 'ollama' ? '#ffffff' : 'transparent',
+                                color: model === 'ollama' ? '#000000' : '#8c8c93',
                                 cursor: 'pointer',
                                 fontSize: '0.78rem',
-                                fontWeight: model === 'ollama' ? 700 : 400,
+                                fontWeight: 600,
                                 transition: 'all 0.2s',
                             }}
                         >
-                            🦙 Ollama (offline)
+                            Ollama
                         </button>
                     </div>
 
@@ -444,27 +755,34 @@ const Chat = () => {
                 </div>
             </main>
 
-            {showRightPanel && (
+            {showRightPanel && activeChat && (
                 <aside className="right-panel">
                     <h3 className="sidebar-header" style={{ padding: 0 }}>System Details</h3>
 
                     <div className="details-card">
+                        <div className="details-card-title">Active Chat</div>
+                        <div className="details-card-value" style={{ fontSize: '0.9rem' }}>{activeChat.title}</div>
+                    </div>
+
+                    <div className="details-card">
                         <div className="details-card-title">Active Model</div>
                         <div className="details-card-value" style={{ color: model === 'ollama' ? '#fff' : '#ccc' }}>
-                            {model === 'ollama' ? '🦙 qwen2.5:7b' : '✨ Gemini Flash'}
+                            {model === 'ollama' ? 'qwen2.5:7b' : 'Gemini Flash'}
                         </div>
                     </div>
 
                     <div className="details-card">
                         <div className="details-card-title">Mode</div>
                         <div className="details-card-value" style={{ fontSize: '0.8rem', color: model === 'ollama' ? '#fff' : '#ccc' }}>
-                            {model === 'ollama' ? '🔒 Offline / Local' : '☁️ Cloud / API'}
+                            {model === 'ollama' ? 'Offline / Local' : 'Cloud / API'}
                         </div>
                     </div>
 
                     <div className="details-card">
-                        <div className="details-card-title">Engine</div>
-                        <div className="details-card-value">{model === 'ollama' ? 'Ollama' : 'LangChain.js'}</div>
+                        <div className="details-card-title">Updated</div>
+                        <div className="details-card-value" style={{ fontSize: '0.82rem' }}>
+                            {formatChatDate(activeChat.updatedAt)}
+                        </div>
                     </div>
 
                     <div className="details-card">
@@ -494,7 +812,41 @@ const Chat = () => {
 
                     <div className="details-card">
                         <div className="details-card-title">Session Messages</div>
-                        <div className="details-card-value">{history.length - 1}</div>
+                        <div className="details-card-value">{Math.max(history.length - 1, 0)}</div>
+                    </div>
+
+                    <div className="details-card">
+                        <div className="details-card-title">Actions</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <button
+                                type="button"
+                                onClick={clearActiveHistory}
+                                style={{
+                                    padding: '9px 12px',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    background: 'transparent',
+                                    color: '#c2c2d6',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Clear Current Chat
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => createNewChat(model)}
+                                style={{
+                                    padding: '9px 12px',
+                                    borderRadius: '10px',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    background: '#111',
+                                    color: '#fff',
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Start New Chat
+                            </button>
+                        </div>
                     </div>
 
                     <div className="details-card">

@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { Brain, Paperclip, X, Settings, Trophy, Check, ChevronRight } from 'lucide-react';
 
 interface QuizQuestion {
     question: string;
@@ -114,7 +115,7 @@ export default function Quizzes() {
 
     return (
         <div style={{ padding: '20px 20px 100px 20px', color: 'white', maxWidth: '800px', margin: '0 auto', minHeight: '100vh' }}>
-            <h1 style={{ fontSize: '2.5rem', marginBottom: '10px' }}>🧠 Concept Quizzes</h1>
+            <h1 style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}><Brain size={28} /> Concept Quizzes</h1>
             <p style={{ color: '#aaa', marginBottom: '40px', fontSize: '1.1rem' }}>Generate AI quizzes from any topic or upload your study material (docs, images) to ensure you have the concepts clear.</p>
 
             {!questions && !loading && (
@@ -146,7 +147,7 @@ export default function Quizzes() {
                                 onClick={() => fileInputRef.current?.click()}
                                 style={{ padding: '8px 15px', backgroundColor: '#fff', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}
                             >
-                                📎 Upload File/Image
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}><Paperclip size={14} /> Upload File/Image</span>
                             </button>
                             <input 
                                 type="file" accept=".txt,.csv,image/*" ref={fileInputRef} style={{ display: 'none' }}
@@ -158,9 +159,9 @@ export default function Quizzes() {
                             <div style={{ marginBottom: '10px', padding: '10px', backgroundColor: '#000', border: '1px solid #444', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                                     <img src={imageBase64} alt="Upload preview" style={{ height: '40px', borderRadius: '5px' }} />
-                                    <span style={{ color: '#aaa', fontSize: '0.9rem' }}>Image attached for AI analysis ✓</span>
+                                    <span style={{ color: '#aaa', fontSize: '0.9rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Check size={14} /> Image attached for AI analysis</span>
                                 </div>
-                                <button type="button" onClick={() => setImageBase64(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>✕</button>
+                                <button type="button" onClick={() => setImageBase64(null)} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center' }}><X size={16} /></button>
                             </div>
                         )}
 
@@ -172,14 +173,14 @@ export default function Quizzes() {
                     </div>
                     
                     <button type="submit" style={{ padding: '18px', backgroundColor: '#fff', color: '#000', fontWeight: 'bold', fontSize: '1.2rem', border: 'none', borderRadius: '10px', cursor: 'pointer', marginTop: '10px', boxShadow: '0 4px 15px rgba(255, 255, 255, 0.2)' }}>
-                        Generate Quiz ✨
+                        Generate Quiz
                     </button>
                 </form>
             )}
 
             {loading && (
                 <div style={{ textAlign: 'center', padding: '60px 0', backgroundColor: '#111', borderRadius: '20px', border: '1px solid #333' }}>
-                    <div style={{ fontSize: '4rem', marginBottom: '20px', animation: 'spin 2s linear infinite' }}>⚙️</div>
+                    <div style={{ marginBottom: '20px', animation: 'spin 2s linear infinite', display: 'flex', justifyContent: 'center' }}><Settings size={40} /></div>
                     <h2 style={{ color: '#fff', fontSize: '1.8rem' }}>AI is analyzing your material...</h2>
                     <p style={{ color: '#888', fontSize: '1.1rem' }}>Preparing challenging questions just for you.</p>
                 </div>
@@ -240,8 +241,8 @@ export default function Quizzes() {
                                     }}
                                 >
                                     <span>{opt}</span>
-                                    {selectedOption && isCorrect && <span style={{ fontSize: '1.5rem', color: '#fff' }}>✓</span>}
-                                    {selectedOption && isSelected && !isCorrect && <span style={{ fontSize: '1.5rem', color: '#888' }}>✕</span>}
+                                    {selectedOption && isCorrect && <span style={{ color: '#fff', display: 'inline-flex' }}><Check size={18} /></span>}
+                                    {selectedOption && isSelected && !isCorrect && <span style={{ color: '#888', display: 'inline-flex' }}><X size={18} /></span>}
                                 </button>
                             );
                         })}
@@ -258,7 +259,7 @@ export default function Quizzes() {
                                 onClick={handleNext}
                                 style={{ alignSelf: 'flex-end', padding: '12px 30px', backgroundColor: '#fff', color: '#000', fontWeight: 'bold', fontSize: '1.15rem', border: 'none', borderRadius: '8px', cursor: 'pointer', boxShadow: '0 4px 10px rgba(255, 255, 255, 0.2)' }}
                             >
-                                {currentIndex < questions.length - 1 ? 'Next Question ➔' : 'View Final Score ➔'}
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>{currentIndex < questions.length - 1 ? 'Next Question' : 'View Final Score'} <ChevronRight size={16} /></span>
                             </button>
                         </div>
                     )}
@@ -268,7 +269,7 @@ export default function Quizzes() {
             {showResults && questions && (
                 <div style={{ backgroundColor: '#111', padding: '60px 40px', borderRadius: '20px', textAlign: 'center', boxShadow: '0 10px 40px rgba(0,0,0,0.5)', border: '1px solid #333' }}>
                     <div style={{ fontSize: '5rem', marginBottom: '20px', filter: 'grayscale(1)' }}>
-                        {score === questions.length ? '🏆' : (score > questions.length / 2 ? '👍' : '📚')}
+                        <Trophy size={40} />
                     </div>
                     
                     <h2 style={{ fontSize: '2.5rem', marginBottom: '15px', color: score === questions.length ? '#fff' : 'white' }}>

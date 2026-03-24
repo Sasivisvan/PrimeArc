@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
+import { Search, UserRound, Eye, PlaySquare, X } from 'lucide-react';
 
 interface YouTubeVideo {
     id: string;
@@ -55,7 +56,7 @@ export default function StudyTube() {
         <div style={{ padding: '20px', color: 'white', maxWidth: '1200px', margin: '0 auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
                 <div>
-                    <h1 style={{ fontSize: '2.5rem', margin: '0 0 10px 0' }}>▶️ StudyTube</h1>
+                    <h1 style={{ fontSize: '2.5rem', margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '10px' }}><PlaySquare size={28} /> StudyTube</h1>
                     <p style={{ margin: 0, color: '#aaa', fontSize: '1.1rem' }}>Curated, distraction-free YouTube search for {classLevel}.</p>
                 </div>
 
@@ -90,7 +91,7 @@ export default function StudyTube() {
                             onClick={() => setActiveVideoId(null)}
                             style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem', padding: 0 }}
                         >
-                            ✕ Close Player
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}><X size={14} /> Close Player</span>
                         </button>
                     </div>
                 </div>
@@ -99,7 +100,7 @@ export default function StudyTube() {
             {/* Video Grid */}
             {loading ? (
                 <div style={{ textAlign: 'center', padding: '100px 0', color: '#888', fontSize: '1.5rem' }}>
-                    Searching YouTube... 🔍
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><Search size={18} /> Searching YouTube...</span>
                 </div>
             ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '25px' }}>
@@ -123,8 +124,8 @@ export default function StudyTube() {
                                     {video.title}
                                 </h3>
                                 <div style={{ color: '#aaa', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '4px', overflow: 'hidden' }}>
-                                    <span style={{ fontWeight: 'bold', color: '#ccc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>🧑‍🏫 {video.author}</span>
-                                    <span>👁️ {video.views?.toLocaleString() || 'Many'} views</span>
+                                    <span style={{ fontWeight: 'bold', color: '#ccc', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-flex', alignItems: 'center', gap: '6px' }}><UserRound size={14} /> {video.author}</span>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}><Eye size={14} /> {video.views?.toLocaleString() || 'Many'} views</span>
                                 </div>
                             </div>
                         </div>

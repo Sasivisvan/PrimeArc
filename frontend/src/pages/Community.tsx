@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
+import { Users } from 'lucide-react';
 
 interface Answer {
     _id: string;
@@ -113,7 +114,7 @@ export default function Community() {
                 <button 
                     onClick={() => setShowAskForm(!showAskForm)}
                     style={{ padding: '12px 24px', backgroundColor: '#fff', border: 'none', borderRadius: '8px', color: '#000', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.05rem', boxShadow: '0 4px 10px rgba(255, 255, 255, 0.2)', marginLeft: 'auto' }}>
-                    {showAskForm ? '✕ Cancel' : 'Ask a Question'}
+                    {showAskForm ? 'Cancel' : 'Ask a Question'}
                 </button>
             </div>
 
@@ -225,7 +226,7 @@ export default function Community() {
 
                 {questions.length === 0 && !showAskForm && (
                    <div style={{ textAlign: 'center', padding: '50px 0', backgroundColor: '#111', borderRadius: '12px', border: '1px solid #333' }}>
-                       <span style={{ fontSize: '3rem', filter: 'grayscale(1)' }}>👥</span>
+                       <span style={{ display: 'inline-flex', color: '#888' }}><Users size={36} /></span>
                        <h3 style={{ color: '#aaa', marginTop: '15px' }}>No questions yet for {classLevel}</h3>
                        <p style={{ color: '#666' }}>Be the first to start a discussion!</p>
                    </div>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Lock, Shield } from 'lucide-react';
 
 export default function TeacherAdmin() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -17,7 +18,7 @@ export default function TeacherAdmin() {
         return (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh', color: 'white' }}>
                 <form onSubmit={handleLogin} style={{ backgroundColor: '#2a2a35', padding: '40px', borderRadius: '15px', display: 'flex', flexDirection: 'column', gap: '20px', width: '350px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-                    <div style={{ textAlign: 'center', fontSize: '3rem', marginBottom: '10px' }}>🔐</div>
+                    <div style={{ textAlign: 'center', marginBottom: '10px', display: 'flex', justifyContent: 'center' }}><Lock size={36} /></div>
                     <h2 style={{ margin: 0, textAlign: 'center' }}>Teacher Access</h2>
                     <p style={{ color: '#888', textAlign: 'center', margin: '0 0 20px 0', fontSize: '0.9rem' }}>Enter the master teacher password to view class credentials.</p>
                     <input 
@@ -36,7 +37,7 @@ export default function TeacherAdmin() {
     return (
         <div style={{ padding: '40px 20px', color: 'white', maxWidth: '800px', margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '40px' }}>
-                <div style={{ fontSize: '3rem' }}>🛡️</div>
+                <div style={{ display: 'flex', alignItems: 'center' }}><Shield size={36} /></div>
                 <div>
                     <h1 style={{ fontSize: '2.5rem', margin: 0, color: '#fff' }}>Teacher Admin Portal</h1>
                     <p style={{ color: '#aaa', margin: '5px 0 0 0', fontSize: '1.1rem' }}>Secure credentials index. Do not share this page directly with students.</p>
