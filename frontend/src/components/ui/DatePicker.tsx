@@ -91,10 +91,10 @@ export default function DatePicker({ value, onChange, placeholder = "Select Date
                 onClick={() => setIsOpen(!isOpen)}
                 className={`
                     flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-sm w-full
-                    ${isOpen ? 'border-primary bg-primary/10 text-white' : 'border-white/10 bg-white/5 text-gray-300 hover:border-white/20'}
+                    ${isOpen ? 'border-white bg-white/10 text-white' : 'border-white/10 bg-white/5 text-gray-300 hover:border-white/20'}
                 `}
             >
-                <CalendarIcon size={16} className={isOpen ? 'text-primary' : 'text-gray-400'} />
+                <CalendarIcon size={16} className={isOpen ? 'text-white' : 'text-gray-400'} />
                 <span>{selectedDate ? formatDisplayDate(selectedDate) : placeholder}</span>
             </button>
 
@@ -152,7 +152,7 @@ export default function DatePicker({ value, onChange, placeholder = "Select Date
                                             className={`
                                                 h-8 w-8 rounded-full text-sm flex items-center justify-center transition-all
                                                 ${isSelected
-                                                    ? 'bg-primary text-black font-bold shadow-glow-sm'
+                                                    ? 'bg-white text-black font-bold shadow-sm'
                                                     : isToday
                                                         ? 'bg-white/10 text-white border border-primary/50'
                                                         : 'text-gray-300 hover:bg-white/5 hover:text-white'
@@ -167,7 +167,7 @@ export default function DatePicker({ value, onChange, placeholder = "Select Date
 
                             {/* Time Picker */}
                             <div className="border-t border-white/5 pt-3 flex items-center justify-center gap-2">
-                                <Clock size={14} className="text-primary" />
+                                <Clock size={14} className="text-white" />
                                 <div className="flex items-center bg-white/5 rounded px-2 py-1 gap-1 border border-white/10">
                                     <input
                                         type="number"

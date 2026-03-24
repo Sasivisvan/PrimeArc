@@ -3,12 +3,36 @@ import ClassContent from '../models/ClassContent.js';
 import Question from '../models/Question.js';
 import Task from '../models/Task.js';
 import Note from '../models/Note.js';
+import Quiz from '../models/Quiz.js';
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import yts from 'yt-search';
 import dotenv from 'dotenv';
+import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import multer from 'multer';
+import { randomBytes } from 'crypto';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pdf = require('pdf-parse');
 dotenv.config();
 
 const router = express.Router();
+
+const CONTENT_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'content');
+fs.mkdirSync(CONTENT_UPLOAD_DIR, { recursive: true });
+const contentPdfStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, CONTENT_UPLOAD_DIR),
+    filename: (_req, _file, cb) => cb(null, `${randomBytes(16).toString('hex')}.pdf`),
+});
+const uploadContentPdf = multer({
+    storage: contentPdfStorage,
+    limits: { fileSize: 35 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const ok = file.mimetype === 'application/pdf' || /\.pdf$/i.test(file.originalname || '');
+        cb(ok ? null : new Error('Only PDF files are allowed'), ok);
+    },
+});
 
 const geminiModel = new ChatGoogleGenerativeAI({
     apiKey: process.env.GEMINI_API_KEY,
@@ -22,7 +46,11 @@ const geminiModel = new ChatGoogleGenerativeAI({
 router.get('/content', async (req, res) => {
     try {
         const { classLevel } = req.query;
-        const filter = classLevel ? { classLevel: Number(classLevel) } : {};
+        let filter = {};
+        if (classLevel) {
+            const num = Number(classLevel);
+            filter.classLevel = isNaN(num) ? classLevel : num;
+        }
         const content = await ClassContent.find(filter).sort({ createdAt: -1 });
         res.json(content);
     } catch (err) {
@@ -30,15 +58,124 @@ router.get('/content', async (req, res) => {
     }
 });
 
+// Helper: Extract text from PDF link
+async function extractPdfText(url) {
+    try {
+        const response = await axios.get(url, { responseType: 'arraybuffer' });
+        const data = await pdf(response.data);
+        // Basic split by page if possible, pdf-parse doesn't do perfect page splitting by default
+        // But we can join and simulate or use a more advanced strategy if needed
+        // For now, let's just store the full text as page 1 for simplicity, 
+        // OR try to use a more granular approach if we have one.
+        // Actually, we can just save it as a single chunk if we don't have page markers.
+        return [{ page: 1, content: data.text }];
+    } catch (err) {
+        console.error("PDF Extraction error:", err);
+        return [];
+    }
+}
+
 // Upload Content
 router.post('/content', async (req, res) => {
     try {
         const { title, link, classLevel, uploadedBy, tags } = req.body;
-        const newContent = new ClassContent({ title, link, classLevel, uploadedBy, tags });
+        
+        let extractedText = [];
+        if (link && link.toLowerCase().endsWith('.pdf')) {
+            extractedText = await extractPdfText(link);
+        }
+
+        const newContent = new ClassContent({ title, link, classLevel, uploadedBy, tags, extractedText });
         await newContent.save();
         res.status(201).json(newContent);
     } catch (err) {
-        res.status(500).json({ error: 'Failed to upload content' });
+        console.error("Upload error:", err.message);
+        res.status(500).json({ error: 'Failed to upload content', details: err.message });
+    }
+});
+
+router.post('/content/upload', (req, res, next) => {
+    uploadContentPdf.single('file')(req, res, (err) => {
+        if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
+        next();
+    });
+}, async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'PDF file required' });
+
+        const { title, classLevel, uploadedBy, tags: tagsRaw } = req.body;
+        if (!title || classLevel === undefined || classLevel === '') {
+            if (req.file.path) fs.unlink(req.file.path, () => {});
+            return res.status(400).json({ error: 'title and classLevel are required' });
+        }
+
+        let tags = [];
+        if (tagsRaw) {
+            try {
+                tags = typeof tagsRaw === 'string' ? JSON.parse(tagsRaw) : tagsRaw;
+                if (!Array.isArray(tags)) tags = [];
+            } catch {
+                tags = [];
+            }
+        }
+
+        const host = `${req.protocol}://${req.get('host')}`;
+        const link = `${host}/api/content-files/${req.file.filename}`;
+
+        let extractedText = [];
+        try {
+            const buf = await fs.promises.readFile(req.file.path);
+            const data = await pdf(buf);
+            extractedText = [{ page: 1, content: data.text }];
+        } catch (e) {
+            console.error('PDF extraction (upload):', e.message);
+        }
+
+        const newContent = new ClassContent({
+            title,
+            link,
+            classLevel,
+            uploadedBy: uploadedBy || 'anonymous',
+            tags,
+            extractedText,
+        });
+        await newContent.save();
+        res.status(201).json(newContent);
+    } catch (err) {
+        console.error('content/upload:', err.message);
+        if (req.file?.path) fs.unlink(req.file.path, () => {});
+        res.status(500).json({ error: 'Failed to save uploaded content', details: err.message });
+    }
+});
+
+router.get('/content-files/:name', (req, res) => {
+    const name = req.params.name;
+    if (!/^[a-f0-9]{32}\.pdf$/i.test(name)) {
+        return res.status(400).send('Invalid file');
+    }
+    const filePath = path.join(CONTENT_UPLOAD_DIR, name);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
+    res.sendFile(path.resolve(filePath), (err) => {
+        if (err && !res.headersSent) res.status(404).send('Not found');
+    });
+});
+
+// Delete Content
+router.delete('/content/:id', async (req, res) => {
+    try {
+        const content = await ClassContent.findById(req.params.id);
+        if (!content) return res.status(404).json({ error: 'Not found' });
+
+        const m = content.link && content.link.match(/\/api\/content-files\/([a-f0-9]{32}\.pdf)/i);
+        if (m) {
+            const fp = path.join(CONTENT_UPLOAD_DIR, m[1]);
+            fs.unlink(fp, () => {});
+        }
+
+        await ClassContent.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete content' });
     }
 });
 
@@ -58,10 +195,10 @@ router.put('/content/:id/upvote', async (req, res) => {
 // Comment on Content
 router.post('/content/:id/comment', async (req, res) => {
     try {
-        const { user, text } = req.body;
+        const { user, text, page } = req.body;
         const content = await ClassContent.findById(req.params.id);
         if (!content) return res.status(404).json({ error: 'Not found' });
-        content.comments.push({ user, text });
+        content.comments.push({ user, text, page });
         await content.save();
         res.json(content);
     } catch (err) {
@@ -75,10 +212,25 @@ router.post('/content/:id/comment', async (req, res) => {
 router.get('/tasks', async (req, res) => {
     try {
         // scope can be 'personal' or 'class'
-        const { scope, classLevel } = req.query;
-        const filter = {};
-        if (scope) filter.scope = scope;
-        if (scope === 'class' && classLevel) filter.classLevel = Number(classLevel);
+        const { scope, classLevel, username } = req.query;
+        let filter = {};
+        if (scope) {
+            filter.scope = scope;
+            if (scope === 'class' && classLevel) filter.classLevel = Number(classLevel);
+            if (scope === 'personal' && username) filter.createdBy = username;
+        } else {
+            if (classLevel && username) {
+                filter = {
+                    $or: [
+                        { scope: 'class', classLevel: Number(classLevel) },
+                        { scope: 'personal', createdBy: username }
+                    ]
+                };
+            } else if (classLevel) {
+                filter.classLevel = Number(classLevel);
+                filter.scope = 'class';
+            }
+        }
         
         const tasks = await Task.find(filter).sort({ createdAt: -1 });
         res.json(tasks);
@@ -174,9 +326,11 @@ router.post('/notes', async (req, res) => {
 // =======================
 router.post('/generate-quiz', async (req, res) => {
     try {
-        const { topic, text, imageBase64, numQuestions } = req.body;
+        const { topic, text, imageBase64, numQuestions, difficulty } = req.body;
         const nQ = numQuestions || 5;
+        const diff = difficulty || 'medium';
         const prompt = `Generate a JSON array of ${nQ} multiple choice questions to test understanding of this topic: ${topic}. 
+        The questions should be of ${diff} difficulty level.
         Provided text/context: ${text || "Use general knowledge. If an image is provided, ensure questions are derived directly from the informational content inside the image."}
         Return ONLY valid JSON in this exact format, with NO markdown code blocks, just raw JSON: 
         [{"question": "Q text", "options": ["A", "B", "C", "D"], "answer": "Correct Option Text", "explanation": "A one-sentence explanation of why it's correct"}]`;
@@ -221,6 +375,48 @@ router.post('/generate-flashcards', async (req, res) => {
     }
 });
 
+router.post('/airesponse', async (req, res) => {
+    try {
+        const { prompt, contentId, history = [] } = req.body;
+        if (!prompt) return res.status(400).json({ error: "Prompt is required" });
+
+        let context = "";
+        if (contentId) {
+            const content = await ClassContent.findById(contentId);
+            if (content && content.extractedText && content.extractedText.length > 0) {
+                context = content.extractedText.map(t => `[Page ${t.page}]: ${t.content}`).join("\n\n");
+            }
+        }
+
+        const systemInstruction = `You are PrimeArc AI, a helpful educational assistant. 
+        Use the following document context to answer the user's question accurately. 
+        If the information is in the document, mention the page number clearly (e.g., "According to page 1...").
+        If the answer isn't in the document, say so but try to help with general knowledge.
+        
+        CONTEXT:
+        ${context || "No specific document context provided."}
+        `;
+
+        const formattedHistory = Array.isArray(history)
+            ? history.slice(-10).map((msg) => [
+                msg.role === 'user' ? 'human' : 'ai',
+                msg.content
+            ])
+            : [];
+
+        const response = await geminiModel.invoke([
+            ['system', systemInstruction],
+            ...formattedHistory,
+            ['human', prompt]
+        ]);
+
+        res.json({ content: response.content });
+    } catch (err) {
+        console.error("AI Response error:", err);
+        res.status(500).json({ error: "Failed to generate AI response: " + err.message });
+    }
+});
+
 // YouTube Search API (using yt-search, no API key required)
 router.get('/youtube-search', async (req, res) => {
     try {
@@ -244,6 +440,43 @@ router.get('/youtube-search', async (req, res) => {
         console.error('YouTube search error:', err);
         res.status(500).json({ error: 'YouTube search failed' });
     }
+});
+
+// =======================
+// Quiz Persistence Endpoints
+// =======================
+
+router.get('/quizzes', async (req, res) => {
+    try {
+        const { user, documentId } = req.query;
+        let filter = {};
+        if (user) filter.user = user;
+        if (documentId) filter.documentId = documentId;
+        const quizzes = await Quiz.find(filter).sort({ createdAt: -1 });
+        res.json(quizzes);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/quizzes', async (req, res) => {
+    try {
+        const quiz = new Quiz(req.body);
+        await quiz.save();
+        res.status(201).json(quiz);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.put('/quizzes/:id/score', async (req, res) => {
+    try {
+        const { score } = req.body;
+        const quiz = await Quiz.findById(req.params.id);
+        if (!quiz) return res.status(404).json({ error: 'Not found' });
+        
+        quiz.attempts += 1;
+        if (score > quiz.bestScore) quiz.bestScore = score;
+        
+        await quiz.save();
+        res.json(quiz);
+    } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // =======================
@@ -275,6 +508,63 @@ router.post('/questions/:id/answers', async (req, res) => {
         await q.save();
         res.json(q);
     } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/proxy-pdf', async (req, res) => {
+    try {
+        const raw = req.query.url;
+        const targetUrl = typeof raw === 'string' ? raw : Array.isArray(raw) && raw[0] ? String(raw[0]) : '';
+        if (!targetUrl || !/^https?:\/\//i.test(targetUrl)) {
+            return res.status(400).send('Valid http(s) URL required');
+        }
+
+        const forwardHeaders = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            Accept: 'application/pdf,*/*;q=0.8',
+        };
+        // Some hosts (like tmpfiles.org) enforce anti-hotlink rules and require browser context.
+        // Forward what the browser sent us to the upstream PDF host.
+        if (req.headers.referer) forwardHeaders.Referer = req.headers.referer;
+        if (req.headers.origin) forwardHeaders.Origin = req.headers.origin;
+        if (req.headers['accept-language']) forwardHeaders['Accept-Language'] = req.headers['accept-language'];
+        if (req.headers.range) forwardHeaders.Range = req.headers.range;
+
+        const response = await axios.get(targetUrl, {
+            responseType: 'stream',
+            headers: forwardHeaders,
+            maxRedirects: 5,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+            validateStatus: () => true,
+        });
+
+        if (response.status < 200 || response.status >= 300) {
+            return res.status(502).send('Upstream returned non-OK status');
+        }
+
+        const ct = response.headers['content-type'] || 'application/pdf';
+        res.setHeader('Content-Type', ct.includes('pdf') ? ct : 'application/pdf');
+
+        // Ensure PDF.js can read these headers in the browser via CORS.
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
+
+        if (response.headers['content-length'])
+            res.setHeader('Content-Length', response.headers['content-length']);
+        if (response.headers['content-range'])
+            res.setHeader('Content-Range', response.headers['content-range']);
+        if (response.headers['accept-ranges'])
+            res.setHeader('Accept-Ranges', response.headers['accept-ranges']);
+
+        res.status(response.status);
+
+        response.data.on('error', () => {
+            if (!res.destroyed) res.destroy();
+        });
+        response.data.pipe(res);
+    } catch (err) {
+        console.error('proxy-pdf:', err.message);
+        if (!res.headersSent) res.status(500).send('Error proxying PDF');
+    }
 });
 
 export default router;

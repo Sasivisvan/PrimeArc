@@ -25,7 +25,7 @@ export default function ChatMessage({ role, content, citations }: ChatMessagePro
         <div className={cn("flex w-full gap-4", isAi ? "" : "flex-row-reverse")}>
             <div className={cn(
                 "h-10 w-10 shrink-0 rounded-full flex items-center justify-center border",
-                isAi ? "bg-primary/20 border-primary text-primary" : "bg-secondary/20 border-secondary text-secondary"
+                isAi ? "bg-white/10 border-white/20 text-white" : "bg-white/5 border-white/10 text-gray-300"
             )}>
                 {isAi ? <Bot size={20} /> : <User size={20} />}
             </div>
@@ -34,14 +34,14 @@ export default function ChatMessage({ role, content, citations }: ChatMessagePro
                 "max-w-[80%] rounded-2xl p-4 border",
                 isAi
                     ? "rounded-tl-none bg-surface/50 border-white/5 text-gray-200"
-                    : "rounded-tr-none bg-secondary/10 border-secondary/20 text-white shadow-[0_0_15px_-5px_rgba(99,102,241,0.3)]"
+                    : "rounded-tr-none bg-white/5 border-white/10 text-white shadow-sm"
             )}>
                 <p className="leading-relaxed whitespace-pre-wrap">{content}</p>
 
                 {citations && citations.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2 pt-3 border-t border-white/5">
                         {citations.map((cite, idx) => (
-                            <button key={idx} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 hover:border-primary/30 transition-all text-xs text-gray-400 hover:text-primary">
+                            <button key={idx} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/30 transition-all text-xs text-gray-400 hover:text-white">
                                 <FileText size={12} />
                                 {cite.title}
                             </button>

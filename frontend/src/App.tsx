@@ -37,20 +37,7 @@ const Navbar = () => {
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [authPassword, setAuthPassword] = useState('');
     
-    // Custom Dropdown State
-    const [classDropdownOpen, setClassDropdownOpen] = useState(false);
-    const dropdownRef = useRef<HTMLDivElement>(null);
-
-    // Close dropdown on outside click
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setClassDropdownOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
+    // Class dropdown removed.
 
     const handleAuthSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -81,33 +68,8 @@ const Navbar = () => {
             
             <div className="profile-selector" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', backgroundColor: '#1a1a25', padding: '8px 20px', borderRadius: '30px' }}>
                 
-                {/* Custom Class Dropdown */}
-                <div style={{ position: 'relative' }} ref={dropdownRef}>
-                    <div 
-                        onClick={() => setClassDropdownOpen(!classDropdownOpen)}
-                        style={{ padding: '8px 16px', borderRadius: '15px', backgroundColor: '#333', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid #444', transition: 'all 0.2s', minWidth: '115px', justifyContent: 'space-between', fontWeight: 'bold' }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = '#b14fff'}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = '#444'}
-                    >
-                        <span>Class {classLevel}</span>
-                        <span style={{ fontSize: '0.8rem', opacity: 0.7, transform: classDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▼</span>
-                    </div>
-                    
-                    {classDropdownOpen && (
-                        <div style={{ position: 'absolute', top: 'calc(100% + 10px)', right: 0, width: '130px', backgroundColor: '#2a2a35', borderRadius: '12px', border: '1px solid #555', boxShadow: '0 10px 40px rgba(0,0,0,0.6)', overflow: 'hidden', zIndex: 1000, display: 'flex', flexDirection: 'column', maxHeight: '350px', overflowY: 'auto', animation: 'fadeIn 0.2s ease' }}>
-                            {[...Array(12)].map((_, i) => (
-                                <div 
-                                    key={i+1}
-                                    onClick={() => { setClassLevel(i+1); setClassDropdownOpen(false); }}
-                                    style={{ padding: '12px 18px', cursor: 'pointer', color: classLevel === i+1 ? '#00e5ff' : '#ccc', backgroundColor: classLevel === i+1 ? 'rgba(0, 229, 255, 0.1)' : 'transparent', borderBottom: i < 11 ? '1px solid #333' : 'none', transition: '0.2s', fontWeight: classLevel === i+1 ? 'bold' : 'normal' }}
-                                    onMouseEnter={e => e.currentTarget.style.backgroundColor = classLevel === i+1 ? 'rgba(0, 229, 255, 0.2)' : '#444'}
-                                    onMouseLeave={e => e.currentTarget.style.backgroundColor = classLevel === i+1 ? 'rgba(0, 229, 255, 0.1)' : 'transparent'}
-                                >
-                                    Class {i+1}
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                <div style={{ padding: '8px 16px', borderRadius: '15px', backgroundColor: '#111', color: 'white', display: 'flex', alignItems: 'center', border: '1px solid #333', fontWeight: 'bold' }}>
+                    <span>{classLevel}</span>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', borderLeft: '1px solid #444', paddingLeft: '20px' }}>
@@ -127,7 +89,7 @@ const Navbar = () => {
                         />
                         <span style={{ 
                             position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0, 
-                            backgroundColor: role === 'Class Leader' ? '#4ade80' : '#555', 
+                            backgroundColor: role === 'Class Leader' ? '#fff' : '#333', 
                             transition: '0.4s', borderRadius: '34px' 
                         }}>
                             <span style={{ 
@@ -158,7 +120,7 @@ const Navbar = () => {
                             />
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '10px' }}>
                                 <button type="button" onClick={() => { setShowAuthModal(false); setAuthPassword(''); }} style={{ padding: '12px 20px', backgroundColor: 'transparent', color: '#ccc', border: 'none', cursor: 'pointer', fontSize: '1.05rem', fontWeight: 'bold' }}>Cancel</button>
-                                <button type="submit" style={{ padding: '12px 25px', backgroundColor: '#4ade80', color: '#111', fontWeight: 'bold', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '1.05rem', boxShadow: '0 4px 15px rgba(74, 222, 128, 0.3)' }}>Unlock Mode</button>
+                                <button type="submit" style={{ padding: '12px 25px', backgroundColor: '#fff', color: '#000', fontWeight: 'bold', border: 'none', borderRadius: '10px', cursor: 'pointer', fontSize: '1.05rem', boxShadow: '0 4px 15px rgba(255, 255, 255, 0.2)' }}>Unlock Mode</button>
                             </div>
                         </form>
                     </div>

@@ -17,7 +17,7 @@ const NavItem = ({ to, icon: Icon, label, className }: { to: string; icon: React
             className={({ isActive }) => cn(
                 "flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-200 group text-sm",
                 isActive
-                    ? "bg-primary/10 text-primary border border-primary/20"
+                    ? "bg-white/10 text-white border border-white/20"
                     : "text-gray-400 hover:text-white hover:bg-white/5",
                 className
             )}
@@ -65,8 +65,8 @@ export default function AppLayout() {
             <header className="hidden md:flex h-16 items-center justify-between border-b border-white/5 bg-surface/30 backdrop-blur-xl px-6 shrink-0 z-30">
                 {/* Logo */}
                 <div className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-secondary" />
-                    <span className="text-xl font-bold tracking-wider text-white">PRIME<span className="text-primary">ARC</span></span>
+                    <div className="h-8 w-8 rounded-lg bg-white" />
+                    <span className="text-xl font-bold tracking-wider text-white">PRIME<span className="text-gray-400">ARC</span></span>
                 </div>
 
                 {/* Nav Links */}
@@ -80,9 +80,9 @@ export default function AppLayout() {
                 <div className="flex items-center gap-3 pl-4 border-l border-white/10">
                     <div className="text-right hidden lg:block">
                         <div className="text-sm font-medium text-white">Student Name</div>
-                        <div className="text-xs text-primary">Class Representative</div>
+                        <div className="text-xs text-gray-400">Class Representative</div>
                     </div>
-                    <div className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center text-white font-bold ring-2 ring-white/10">
+                    <div className="h-9 w-9 rounded-full bg-white flex items-center justify-center text-black font-bold ring-2 ring-white/10">
                         S
                     </div>
                 </div>
@@ -105,7 +105,7 @@ export default function AppLayout() {
                                 animate={{ scale: 1, opacity: 1 }}
                                 exit={{ scale: 0, opacity: 0 }}
                                 onClick={() => setIsAIPanelOpen(true)}
-                                className="hidden md:flex fixed right-8 bottom-8 z-40 rounded-full bg-primary p-4 shadow-[0_0_20px_rgba(0,229,255,0.4)] hover:shadow-[0_0_30px_rgba(0,229,255,0.6)] hover:scale-110 active:scale-95 transition-all text-black group"
+                                className="hidden md:flex fixed right-8 bottom-8 z-40 rounded-full bg-white p-4 shadow-[0_0_15px_rgba(255,255,255,0.2)] hover:shadow-[0_0_25px_rgba(255,255,255,0.4)] hover:scale-110 active:scale-95 transition-all text-black group"
                             >
                                 <Brain size={24} className="group-hover:rotate-12 transition-transform" />
                             </motion.button>
@@ -122,12 +122,12 @@ export default function AppLayout() {
                             exit={{ width: 0, opacity: 0 }}
                             transition={{ type: "spring", stiffness: 300, damping: 30, duration: 0.1 }}
                             style={{ width: panelWidth }}
-                            className="hidden md:flex h-full border-l border-white/10 bg-[#0B1120] relative z-20 shadow-xl"
+                            className="hidden md:flex h-full border-l border-white/10 bg-[#000000] relative z-20 shadow-xl"
                         >
                             {/* Resize Handle */}
                             <div
                                 onMouseDown={startResizing}
-                                className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary/50 transition-colors z-50 bg-transparent hover:w-1.5 active:bg-primary"
+                                className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-white/50 transition-colors z-50 bg-transparent hover:w-1.5 active:bg-white"
                             />
 
                             <div style={{ width: panelWidth }} className="h-full w-full overflow-hidden">
@@ -141,27 +141,27 @@ export default function AppLayout() {
 
             {/* Bottom Bar (Mobile) - Unchanged */}
             <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background/80 backdrop-blur-xl border-t border-white/10 p-2 flex justify-around items-center z-50 pb-safe">
-                <NavLink to="/" className={({ isActive }) => cn("p-3 rounded-full", isActive ? "text-primary" : "text-gray-400")}>
+                <NavLink to="/" className={({ isActive }) => cn("p-3 rounded-full", isActive ? "text-white" : "text-gray-400")}>
                     <Home size={24} />
                 </NavLink>
-                <NavLink to="/library" className={({ isActive }) => cn("p-3 rounded-full", isActive ? "text-primary" : "text-gray-400")}>
+                <NavLink to="/library" className={({ isActive }) => cn("p-3 rounded-full", isActive ? "text-white" : "text-gray-400")}>
                     <Library size={24} />
                 </NavLink>
                 <div className="relative -top-5">
                     <button
                         onClick={() => setIsAIPanelOpen(!isAIPanelOpen)}
                         className={cn(
-                            "flex items-center justify-center p-4 rounded-full bg-gradient-to-br from-primary to-secondary shadow-[0_0_20px_rgba(0,229,255,0.4)] text-white",
-                            isAIPanelOpen && "ring-2 ring-white/20"
+                            "flex items-center justify-center p-4 rounded-full bg-white shadow-[0_0_15px_rgba(255,255,255,0.2)] text-black",
+                            isAIPanelOpen && "ring-2 ring-white/50"
                         )}
                     >
                         <Brain size={28} />
                     </button>
                 </div>
-                <NavLink to="/forums" className={({ isActive }) => cn("p-3 rounded-full", isActive ? "text-primary" : "text-gray-400")}>
+                <NavLink to="/forums" className={({ isActive }) => cn("p-3 rounded-full", isActive ? "text-white" : "text-gray-400")}>
                     <MessageSquare size={24} />
                 </NavLink>
-                <NavLink to="/profile" className={({ isActive }) => cn("p-3 rounded-full", isActive ? "text-primary" : "text-gray-400")}>
+                <NavLink to="/profile" className={({ isActive }) => cn("p-3 rounded-full", isActive ? "text-white" : "text-gray-400")}>
                     <User size={24} />
                 </NavLink>
             </nav>

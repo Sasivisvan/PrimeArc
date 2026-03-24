@@ -5,7 +5,7 @@ const TaskSchema = new mongoose.Schema({
     description: { type: String },
     completed: { type: Boolean, default: false },
     scope: { type: String, enum: ['personal', 'class'], default: 'personal' },
-    classLevel: { type: Number }, // Only required if scope is 'class'
+    classLevel: { type: mongoose.Schema.Types.Mixed }, // Only required if scope is 'class'
     createdBy: { type: String }, // username of who created it
     priority: { type: String, enum: ['Low', 'Medium', 'High'], default: 'Medium' },
     dueDate: { type: Date },

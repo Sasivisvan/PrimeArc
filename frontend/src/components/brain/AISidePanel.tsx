@@ -84,7 +84,7 @@ export default function AISidePanel({ onClose }: AISidePanelProps) {
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-white/10 shrink-0">
                 <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                    PrimeArc AI <span className="text-xs font-normal py-0.5 px-2 rounded-full bg-primary/10 text-primary border border-primary/20">BETA</span>
+                    PrimeArc AI <span className="text-xs font-normal py-0.5 px-2 rounded-full bg-white/10 text-white border border-white/20">BETA</span>
                 </h2>
                 <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors">
                     <X size={20} />
@@ -133,7 +133,7 @@ export default function AISidePanel({ onClose }: AISidePanelProps) {
                     <button 
                         onClick={getResponse} 
                         disabled={isLoading || !prompt.trim()}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:text-white transition-colors p-1.5 rounded-lg hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isLoading ? <Loader2 className="animate-spin" size={18} /> : <Send size={18} />}
                     </button>

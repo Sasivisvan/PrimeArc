@@ -5,10 +5,10 @@ import DatePicker from '../components/ui/DatePicker';
 
 export default function Dashboard() {
     const [tasks, setTasks] = useState([
-        { id: 999, title: 'Finish Lab Record - Thermodynamics', date: 'Today, 5:00 PM', done: false, isUrgent: true },
-        { id: 1, title: 'Complete Assignment 3', date: 'Oct 20', done: false, isUrgent: false },
-        { id: 2, title: 'Physics Lab Record', date: 'Oct 22', done: false, isUrgent: false },
-        { id: 3, title: 'Math Tutorial Sheet', date: 'Oct 24', done: false, isUrgent: false },
+        { id: 999, title: 'Finish Lab Record - Machine Learning', date: 'Today, 5:00 PM', done: false, isUrgent: true },
+        { id: 1, title: 'Complete Assignment 3 - Soft Skills I', date: 'Oct 20', done: false, isUrgent: false },
+        { id: 2, title: 'Environmental Science Lab Record', date: 'Oct 22', done: false, isUrgent: false },
+        { id: 3, title: 'Mathematics for Computing 4 Tutorial Sheet', date: 'Oct 24', done: false, isUrgent: false },
     ]);
 
     const [newTaskTitle, setNewTaskTitle] = useState('');

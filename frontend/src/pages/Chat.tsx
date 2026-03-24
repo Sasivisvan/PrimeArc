@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useUser } from '../context/UserContext';
 
 interface Message {
     role: 'user' | 'ai';
@@ -7,7 +8,8 @@ interface Message {
 }
 
 const BACKEND_URL = "http://localhost:5000";
-const CHAT_STORAGE_KEY = 'primearc_chat_session';
+const makeChatStorageKey = (username: string | null) =>
+    `primearc_chat_session_${username || 'anonymous'}`;
 const MAX_STORED_MESSAGES = 100;
 
 // ─── Markdown Renderer ───────────────────────────────────────────────────────
@@ -130,6 +132,9 @@ const Chat = () => {
     const [model, setModel] = useState<ModelChoice>('gemini');
     const [ollamaStatus, setOllamaStatus] = useState<'online' | 'offline' | 'checking'>('checking');
 
+    const { username } = useUser();
+    const CHAT_STORAGE_KEY = makeChatStorageKey(username);
+
     const [history, setHistory] = useState<Message[]>(() => {
         try {
             const saved = localStorage.getItem(CHAT_STORAGE_KEY);
@@ -210,6 +215,7 @@ const Chat = () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     message: trimmed,
+                    user: username,
                     history: history.slice(-10).map(({ role, content }) => ({ role, content }))
                 })
             });
@@ -239,6 +245,7 @@ const Chat = () => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     message: trimmed,
+                    user: username,
                     history: history.slice(-10).map(({ role, content }) => ({ role, content }))
                 })
             });
@@ -402,9 +409,9 @@ const Chat = () => {
                             style={{
                                 padding: '5px 16px',
                                 borderRadius: '20px',
-                                border: model === 'ollama' ? '2px solid #16a34a' : '1px solid #444',
-                                background: model === 'ollama' ? 'rgba(22,163,74,0.15)' : 'transparent',
-                                color: model === 'ollama' ? '#4ade80' : '#666',
+                                border: model === 'ollama' ? '2px solid #555' : '1px solid #333',
+                                background: model === 'ollama' ? '#111' : 'transparent',
+                                color: model === 'ollama' ? '#fff' : '#888',
                                 cursor: 'pointer',
                                 fontSize: '0.78rem',
                                 fontWeight: model === 'ollama' ? 700 : 400,
@@ -443,14 +450,14 @@ const Chat = () => {
 
                     <div className="details-card">
                         <div className="details-card-title">Active Model</div>
-                        <div className="details-card-value" style={{ color: model === 'ollama' ? '#4ade80' : '#a78bfa' }}>
+                        <div className="details-card-value" style={{ color: model === 'ollama' ? '#fff' : '#ccc' }}>
                             {model === 'ollama' ? '🦙 qwen2.5:7b' : '✨ Gemini Flash'}
                         </div>
                     </div>
 
                     <div className="details-card">
                         <div className="details-card-title">Mode</div>
-                        <div className="details-card-value" style={{ fontSize: '0.8rem', color: model === 'ollama' ? '#4ade80' : '#a78bfa' }}>
+                        <div className="details-card-value" style={{ fontSize: '0.8rem', color: model === 'ollama' ? '#fff' : '#ccc' }}>
                             {model === 'ollama' ? '🔒 Offline / Local' : '☁️ Cloud / API'}
                         </div>
                     </div>

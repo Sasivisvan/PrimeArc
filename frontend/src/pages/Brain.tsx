@@ -18,14 +18,14 @@ export default function Brain() {
                 />
                 <ChatMessage
                     role="user"
-                    content="Can you explain the Second Law of Thermodynamics?"
+                    content="Can you explain the A* Search Algorithm?"
                 />
                 <ChatMessage
                     role="ai"
-                    content="The Second Law of Thermodynamics states that the total entropy of an isolated system can never decrease over time. It essentially governs the direction of heat transfer and energy transformation efficiencies."
+                    content="A* is a graph traversal and path search algorithm, which is often used in computer science due to its completeness, optimality, and optimal efficiency."
                     citations={[
-                        { title: "Thermodynamics_Lecture_2.pdf", type: 'pdf' },
-                        { title: "Physics_Notes_Ch4.docx", type: 'doc' }
+                        { title: "Design_Analysis_Algorithms_Lecture_2.pdf", type: 'pdf' },
+                        { title: "AI_Robotics_Notes_Ch4.docx", type: 'doc' }
                     ]}
                 />
             </div>

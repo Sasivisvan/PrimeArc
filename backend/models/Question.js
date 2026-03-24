@@ -11,7 +11,7 @@ const QuestionSchema = new mongoose.Schema({
     title: { type: String, required: true },
     body: { type: String, required: true },
     author: { type: String, default: 'Student' },
-    classLevel: { type: Number, required: true },
+    classLevel: { type: mongoose.Schema.Types.Mixed, required: true },
     tags: [{ type: String }],
     upvotes: { type: Number, default: 0 },
     answers: [AnswerSchema],

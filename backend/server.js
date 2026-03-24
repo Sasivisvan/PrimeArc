@@ -14,11 +14,17 @@ dotenv.config();
 
 // Initialize App
 const app = express();
+app.set("trust proxy", 1);
 const PORT = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors());
-app.use(express.json());
+// Expose PDF.js range-related headers so the browser can read them when fetching via proxy.
+app.use(cors({
+    origin: true,
+    exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'],
+}));
+app.use(express.json({ limit: '20mb' }));
+app.use(express.urlencoded({ limit: '20mb', extended: true }));
 
 // Request logger
 app.use((req, res, next) => {
@@ -93,7 +99,8 @@ const geminiModel = new ChatGoogleGenerativeAI({
 // POST /chat - Send a message
 app.post("/chat", async (req, res) => {
     try {
-        const { message, history = [] } = req.body;
+        const { message, history = [], user } = req.body;
+        const chatUser = typeof user === 'string' && user.trim() ? user.trim() : 'anonymous';
         
         if (!message || !message.trim()) {
             return res.status(400).json({ error: "Message cannot be empty" });
@@ -101,7 +108,7 @@ app.post("/chat", async (req, res) => {
 
         // Save user message to DB if connected
         if (mongoose.connection.readyState === 1) {
-            const userMsg = new ChatMessage({ role: 'user', content: message });
+            const userMsg = new ChatMessage({ role: 'user', content: message, user: chatUser });
             await userMsg.save();
         }
 
@@ -118,7 +125,7 @@ app.post("/chat", async (req, res) => {
 
         // Save AI message to DB if connected
         if (mongoose.connection.readyState === 1) {
-            const aiMsg = new ChatMessage({ role: 'ai', content: response.content });
+            const aiMsg = new ChatMessage({ role: 'ai', content: response.content, user: chatUser });
             await aiMsg.save();
         }
 
@@ -200,7 +207,8 @@ app.get("/chat-history", async (req, res) => {
         if (mongoose.connection.readyState !== 1) {
             return res.json([]); // Return empty array if no DB
         }
-        const history = await ChatMessage.find().sort({ timestamp: 1 }).limit(100);
+        const reqUser = typeof req.query.user === 'string' && req.query.user.trim() ? req.query.user.trim() : 'anonymous';
+        const history = await ChatMessage.find({ user: reqUser }).sort({ timestamp: 1 }).limit(100);
         res.json(history);
     } catch (error) {
         console.error("Error in /chat-history:", error.message);

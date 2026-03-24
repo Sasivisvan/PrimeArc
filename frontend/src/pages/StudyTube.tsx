@@ -21,7 +21,7 @@ export default function StudyTube() {
         setLoading(true);
         setActiveVideoId(null);
         try {
-            const q = queryParam || `Class ${classLevel} educational`;
+            const q = queryParam || `${classLevel} educational`;
             const res = await fetch(`http://localhost:5000/api/youtube-search?q=${encodeURIComponent(q)}`);
             if (res.ok) {
                 const data = await res.json();
@@ -33,10 +33,7 @@ export default function StudyTube() {
         setLoading(false);
     };
 
-    // Fetch default videos for the current class when the component loads or class changes
-    useEffect(() => {
-        fetchVideos(`Class ${classLevel} strictly educational concepts`);
-    }, [classLevel]);
+    // No default videos fetch. Videos will only show when searched.
 
     const NON_EDU_WORDS = ['game', 'movie', 'song', 'music', 'prank', 'funny', 'trailer', 'esports', 'tiktok', 'mrbeast', 'gta', 'minecraft', 'skibidi'];
 
@@ -51,7 +48,7 @@ export default function StudyTube() {
         }
 
         // Prefix with class level and append strict negative logic to force YT's hand natively
-        fetchVideos(`Class ${classLevel} ${searchQuery} educational lecture tutorial -game -prank -funny -movie -song -skit -minecraft -gta`);
+        fetchVideos(`${classLevel} ${searchQuery} educational lecture tutorial -game -prank -funny -movie -song -skit -minecraft -gta`);
     };
 
     return (
@@ -59,18 +56,18 @@ export default function StudyTube() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
                 <div>
                     <h1 style={{ fontSize: '2.5rem', margin: '0 0 10px 0' }}>▶️ StudyTube</h1>
-                    <p style={{ margin: 0, color: '#aaa', fontSize: '1.1rem' }}>Curated, distraction-free YouTube search for Class {classLevel}.</p>
+                    <p style={{ margin: 0, color: '#aaa', fontSize: '1.1rem' }}>Curated, distraction-free YouTube search for {classLevel}.</p>
                 </div>
 
                 <form onSubmit={handleSearch} style={{ display: 'flex', gap: '10px', flex: 1, maxWidth: '500px' }}>
                     <input 
                         type="text" 
-                        placeholder={`Search educational videos for Class ${classLevel}...`}
+                        placeholder={`Search educational videos for ${classLevel}...`}
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
-                        style={{ flex: 1, padding: '12px 20px', borderRadius: '30px', border: '1px solid #444', backgroundColor: '#1a1a25', color: 'white', fontSize: '1rem' }}
+                        style={{ flex: 1, padding: '12px 20px', borderRadius: '30px', border: '1px solid #333', backgroundColor: '#000', color: 'white', fontSize: '1rem' }}
                     />
-                    <button type="submit" style={{ padding: '0 25px', borderRadius: '30px', border: 'none', backgroundColor: '#ff4d4d', color: 'white', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
+                    <button type="submit" style={{ padding: '0 25px', borderRadius: '30px', border: 'none', backgroundColor: '#fff', color: '#000', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' }}>
                         Search
                     </button>
                 </form>
@@ -78,7 +75,7 @@ export default function StudyTube() {
 
             {/* Video Player Section */}
             {activeVideoId && (
-                <div style={{ marginBottom: '40px', backgroundColor: '#1a1a25', borderRadius: '15px', overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+                <div style={{ marginBottom: '40px', backgroundColor: '#000', borderRadius: '15px', overflow: 'hidden', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', border: '1px solid #333' }}>
                     <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
                         <iframe 
                             src={`https://www.youtube.com/embed/${activeVideoId}?autoplay=1`}
@@ -88,10 +85,10 @@ export default function StudyTube() {
                             title="StudyTube Player"
                         />
                     </div>
-                    <div style={{ padding: '15px 20px', backgroundColor: '#2a2a35' }}>
+                    <div style={{ padding: '15px 20px', backgroundColor: '#111', borderTop: '1px solid #333' }}>
                         <button 
                             onClick={() => setActiveVideoId(null)}
-                            style={{ background: 'none', border: 'none', color: '#ff4d4d', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem', padding: 0 }}
+                            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem', padding: 0 }}
                         >
                             ✕ Close Player
                         </button>
@@ -110,9 +107,9 @@ export default function StudyTube() {
                         <div 
                             key={video.id} 
                             onClick={() => setActiveVideoId(video.id)}
-                            style={{ backgroundColor: '#2a2a35', borderRadius: '12px', overflow: 'hidden', cursor: 'pointer', transition: 'transform 0.2s, box-shadow 0.2s', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}
-                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 10px 20px rgba(0,0,0,0.4)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 10px rgba(0,0,0,0.2)'; }}
+                            style={{ backgroundColor: '#111', borderRadius: '12px', border: '1px solid #333', overflow: 'hidden', cursor: 'pointer', transition: 'transform 0.2s, box-shadow 0.2s', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 10px 20px rgba(0,0,0,0.8)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 10px rgba(0,0,0,0.5)'; }}
                         >
                             <div style={{ position: 'relative' }}>
                                 <img src={video.thumbnail} alt={video.title} style={{ width: '100%', height: '200px', objectFit: 'cover' }} />
@@ -135,7 +132,7 @@ export default function StudyTube() {
                     
                     {!loading && videos.length === 0 && (
                         <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '60px 0', color: '#666' }}>
-                            <p style={{ fontSize: '1.2rem' }}>No videos found. Try a different search.</p>
+                            <p style={{ fontSize: '1.2rem' }}>{searchQuery ? "No videos found. Try a different search." : "Search to discover educational videos!"}</p>
                         </div>
                     )}
                 </div>

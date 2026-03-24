@@ -26,12 +26,12 @@ export default function Tasks() {
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [priority, setPriority] = useState<'Low' | 'Medium' | 'High'>('Medium');
-    const [dueDate, setDueDate] = useState('');
+    const [dueDate, setDueDate] = useState(new Date().toISOString().split('T')[0]);
 
     const fetchTasks = async () => {
         try {
             // Fetch both personal and class tasks in one go or separately based on API
-            const res = await fetch(`http://localhost:5000/api/tasks?classLevel=${classLevel}`);
+            const res = await fetch(`http://localhost:5000/api/tasks?classLevel=${classLevel}&username=${encodeURIComponent(username || '')}`);
             if (res.ok) {
                 const data = await res.json();
                 setTasks(data);
@@ -48,7 +48,7 @@ export default function Tasks() {
     const handleAddTask = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await fetch('http://localhost:5000/api/tasks', {
+            const res = await fetch('http://localhost:5000/api/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -61,42 +61,58 @@ export default function Tasks() {
                     dueDate: dueDate || undefined
                 })
             });
+            
+            if (!res.ok) {
+                const data = await res.json();
+                alert(`Failed to add task: ${data.error || 'Server error'}\n${data.details || 'Please check MongoDB IP whitelist.'}`);
+                return;
+            }
+
             setTitle('');
             setDescription('');
             setPriority('Medium');
             setDueDate('');
             setShowAddForm(false);
             fetchTasks();
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
+            alert(`Failed to add task: ${err.message || 'Network error'}`);
         }
     };
 
     const toggleStatus = async (id: string, currentStatus: boolean) => {
         try {
-            await fetch(`http://localhost:5000/api/tasks/${id}`, {
+            const res = await fetch(`http://localhost:5000/api/tasks/${id}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ completed: !currentStatus })
             });
+            
+            if (!res.ok) {
+                const data = await res.json();
+                alert(`Failed to update task: ${data.error || 'Server error'}`);
+                return;
+            }
+            
             fetchTasks(); // Refresh list to get updated status
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
+            alert(`Network error: ${err.message}`);
         }
     };
 
     // Filter tasks based on the active tab
     const filteredTasks = tasks.filter(t => {
-        if (activeTab === 'personal') return t.scope === 'personal';
+        if (activeTab === 'personal') return t.scope === 'personal' && t.createdBy === username;
         if (activeTab === 'class') return t.scope === 'class';
         return false;
     });
 
     const getPriorityColor = (p: string) => {
         switch(p) {
-            case 'High': return '#ff4d4d'; // Red
-            case 'Medium': return '#f59e0b'; // Orange
-            case 'Low': return '#4ade80'; // Green
+            case 'High': return '#ffffff'; // White
+            case 'Medium': return '#aaaaaa'; // Gray
+            case 'Low': return '#666666'; // Darker gray
             default: return '#888';
         }
     };
@@ -116,45 +132,45 @@ export default function Tasks() {
                     <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
                         <button 
                             onClick={() => setActiveTab('personal')}
-                            style={{ padding: '10px 20px', borderRadius: '30px', backgroundColor: activeTab === 'personal' ? '#b14fff' : '#333', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+                            style={{ padding: '10px 20px', borderRadius: '30px', backgroundColor: activeTab === 'personal' ? '#fff' : '#333', color: activeTab === 'personal' ? '#000' : 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
                         >
                             My Personal Tasks
                         </button>
                         <button 
                             onClick={() => setActiveTab('class')}
-                            style={{ padding: '10px 20px', borderRadius: '30px', backgroundColor: activeTab === 'class' ? '#4ade80' : '#333', color: activeTab === 'class' ? '#111' : 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+                            style={{ padding: '10px 20px', borderRadius: '30px', backgroundColor: activeTab === 'class' ? '#fff' : '#333', color: activeTab === 'class' ? '#000' : 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
                         >
-                            Class {classLevel} Updates
+                            {classLevel} Updates
                         </button>
                     </div>
                 </div>
 
                 {/* Only visually show add button if user can add */}
-                {(activeTab === 'personal' || (activeTab === 'class' && role === 'Class Leader')) && (
+                {(activeTab === 'personal' || (activeTab === 'class' && (role === 'Class Leader' || role === 'Teacher'))) && (
                     <button 
                         onClick={() => setShowAddForm(!showAddForm)}
-                        style={{ padding: '15px 25px', backgroundColor: '#4a90e2', border: 'none', borderRadius: '10px', color: 'white', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.1rem', boxShadow: '0 4px 15px rgba(74, 144, 226, 0.4)' }}
+                        style={{ padding: '15px 25px', backgroundColor: '#fff', border: 'none', borderRadius: '10px', color: '#000', cursor: 'pointer', fontWeight: 'bold', fontSize: '1.1rem', boxShadow: '0 4px 15px rgba(255, 255, 255, 0.2)' }}
                     >
                         {showAddForm ? '✕ Cancel' : '+ Add Task'}
                     </button>
                 )}
             </div>
 
-            {showAddForm && (activeTab === 'personal' || role === 'Class Leader') && (
-                <form onSubmit={handleAddTask} style={{ backgroundColor: '#2a2a35', padding: '25px', borderRadius: '15px', marginBottom: '30px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-                    <h3 style={{ margin: '0 0 10px 0', color: activeTab === 'class' ? '#4ade80' : '#b14fff' }}>
+            {showAddForm && (activeTab === 'personal' || (activeTab === 'class' && (role === 'Class Leader' || role === 'Teacher'))) && (
+                <form onSubmit={handleAddTask} style={{ backgroundColor: '#111', padding: '25px', borderRadius: '15px', marginBottom: '30px', display: 'flex', flexDirection: 'column', gap: '15px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', border: '1px solid #333' }}>
+                    <h3 style={{ margin: '0 0 10px 0', color: activeTab === 'class' ? '#fff' : '#fff' }}>
                         Create a {activeTab === 'class' ? 'Class update' : 'Personal task'}
                     </h3>
                     
                     <input 
                         type="text" placeholder="Task Title" required 
                         value={title} onChange={e => setTitle(e.target.value)} 
-                        style={{ padding: '15px', borderRadius: '8px', border: 'none', backgroundColor: '#1a1a25', color: 'white', fontSize: '1.1rem' }} 
+                        style={{ padding: '15px', borderRadius: '8px', border: '1px solid #444', backgroundColor: '#000', color: 'white', fontSize: '1.1rem' }} 
                     />
                     <textarea 
                         placeholder="Description (optional)" rows={3}
                         value={description} onChange={e => setDescription(e.target.value)} 
-                        style={{ padding: '15px', borderRadius: '8px', border: 'none', backgroundColor: '#1a1a25', color: 'white', fontSize: '1rem', resize: 'vertical' }} 
+                        style={{ padding: '15px', borderRadius: '8px', border: '1px solid #444', backgroundColor: '#000', color: 'white', fontSize: '1rem', resize: 'vertical' }} 
                     />
                     
                     <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
@@ -183,7 +199,7 @@ export default function Tasks() {
                         </div>
                     </div>
                     
-                    <button type="submit" style={{ padding: '15px', backgroundColor: activeTab === 'class' ? '#4ade80' : '#b14fff', color: activeTab === 'class' ? '#111' : 'white', fontWeight: 'bold', fontSize: '1.1rem', border: 'none', borderRadius: '8px', cursor: 'pointer', marginTop: '10px' }}>
+                    <button type="submit" style={{ padding: '15px', backgroundColor: '#fff', color: '#000', fontWeight: 'bold', fontSize: '1.1rem', border: 'none', borderRadius: '8px', cursor: 'pointer', marginTop: '10px' }}>
                         Save Task
                     </button>
                 </form>
@@ -195,7 +211,8 @@ export default function Tasks() {
                     <div 
                         key={task._id} 
                         style={{ 
-                            backgroundColor: '#1a1a25', 
+                            backgroundColor: '#111', 
+                            border: '1px solid #333',
                             padding: '20px', 
                             borderRadius: '12px', 
                             display: 'flex', 
@@ -210,13 +227,13 @@ export default function Tasks() {
                             onClick={() => toggleStatus(task._id, task.completed)}
                             style={{ 
                                 width: '28px', height: '28px', borderRadius: '50%', 
-                                border: `2px solid ${task.completed ? '#4ade80' : '#666'}`, 
-                                backgroundColor: task.completed ? '#4ade80' : 'transparent',
+                                border: `2px solid ${task.completed ? '#fff' : '#666'}`, 
+                                backgroundColor: task.completed ? '#fff' : 'transparent',
                                 display: 'flex', justifyContent: 'center', alignItems: 'center', 
                                 cursor: 'pointer', flexShrink: 0, marginTop: '2px'
                             }}
                         >
-                            {task.completed && <span style={{ color: '#111', fontWeight: 'bold', fontSize: '1.2rem' }}>✓</span>}
+                            {task.completed && <span style={{ color: '#000', fontWeight: 'bold', fontSize: '1.2rem' }}>✓</span>}
                         </div>
                         
                         <div style={{ flex: 1 }}>
@@ -243,7 +260,7 @@ export default function Tasks() {
                             )}
                             
                             <div style={{ fontSize: '0.8rem', color: '#666', marginTop: '10px' }}>
-                                Assigned by <span style={{ color: activeTab === 'class' ? '#4ade80' : '#b14fff' }}>{task.createdBy}</span>
+                                Assigned by <span style={{ color: '#ccc' }}>{task.createdBy}</span>
                             </div>
                         </div>
                     </div>
@@ -251,7 +268,7 @@ export default function Tasks() {
 
                 {sortedTasks.length === 0 && (
                    <p style={{ textAlign: 'center', color: '#666', marginTop: '40px', fontSize: '1.1rem' }}>
-                       {activeTab === 'personal' ? "You have no personal tasks. Enjoy your day! 🎉" : `No updates for Class ${classLevel} yet.`}
+                       {activeTab === 'personal' ? "You have no personal tasks. Enjoy your day! 🎉" : `No updates for ${classLevel} yet.`}
                    </p>
                 )}
             </div>

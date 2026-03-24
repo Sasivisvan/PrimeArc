@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useUser } from '../context/UserContext';
-const NOTE_COLORS = ['#1a1a2e', '#0f2a0f', '#1a0f2a', '#2a1a0f', '#0f1a2a', '#2a0f1a'];
-const NOTE_ACCENTS = ['#b14fff', '#00e5a0', '#f4c430', '#ff4d6d', '#00e5ff', '#ff7043'];
+const NOTE_COLORS = ['#111111', '#1a1a1a', '#222222', '#0a0a0a', '#171717', '#000000'];
+const NOTE_ACCENTS = ['#ffffff', '#eeeeee', '#dddddd', '#cccccc', '#bbbbbb', '#999999'];
 const STORAGE_KEY = 'primearc_notes';
 const MAX_FILE_SIZE_MB = 5;
 
@@ -100,7 +100,15 @@ export default function Notes() {
     };
 
     useEffect(() => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(localNotes));
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(localNotes));
+        } catch (err: any) {
+            if (err.name === 'QuotaExceededError') {
+                alert("Your local browser storage is full! Please delete some old Personal Notes or share large files via 'Class Notes' instead.");
+            } else {
+                console.error("Storage error:", err);
+            }
+        }
     }, [localNotes]);
 
     useEffect(() => {
@@ -129,14 +137,23 @@ export default function Notes() {
         if (isPublic) {
             // Save to DB
             try {
-                await fetch('http://localhost:5000/api/notes', {
+                const res = await fetch('http://localhost:5000/api/notes', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ title, content, author: username, classLevel, isPublic: true })
+                    body: JSON.stringify({ title, content, author: username, classLevel, isPublic: true, files: pendingFiles })
                 });
+                if (!res.ok) {
+                    const data = await res.json();
+                    alert(`Failed to add note: ${data.error || 'Server error'}\n${data.details || 'Please check MongoDB IP whitelist.'}`);
+                    return;
+                }
                 fetchCommunityNotes();
                 setActiveTab('community');
-            } catch (err) { console.error(err); }
+            } catch (err: any) { 
+                console.error(err); 
+                alert(`Network error: ${err.message}`);
+                return;
+            }
         } else {
             // Save locally
             const note: Note = {
@@ -225,9 +242,13 @@ export default function Notes() {
                 setQuestionBody('');
                 setHighlightData(null);
                 alert("Question posted to Q&A Community successfully!");
+            } else {
+                const data = await res.json();
+                alert(`Failed to post question: ${data.error || 'Server error'}`);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error(err);
+            alert(`Network error: ${err.message}`);
         }
     };
 
@@ -240,8 +261,8 @@ export default function Notes() {
                 <div>
                     <h1 className="page-title">Notes</h1>
                     <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button onClick={() => setActiveTab('my_notes')} style={{ padding: '8px 16px', borderRadius: '20px', backgroundColor: activeTab === 'my_notes' ? '#4a90e2' : '#333', color: 'white', border: 'none', cursor: 'pointer' }}>My Notes</button>
-                        <button onClick={() => setActiveTab('community')} style={{ padding: '8px 16px', borderRadius: '20px', backgroundColor: activeTab === 'community' ? '#4ade80' : '#333', color: activeTab === 'community' ? '#111' : 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Class {classLevel} Notes</button>
+                        <button onClick={() => setActiveTab('my_notes')} style={{ padding: '8px 16px', borderRadius: '20px', backgroundColor: activeTab === 'my_notes' ? '#fff' : '#333', color: activeTab === 'my_notes' ? '#000' : 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>My Notes</button>
+                        <button onClick={() => setActiveTab('community')} style={{ padding: '8px 16px', borderRadius: '20px', backgroundColor: activeTab === 'community' ? '#fff' : '#333', color: activeTab === 'community' ? '#000' : 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>{classLevel} Notes</button>
                     </div>
                 </div>
                 {/* New Note Button available on both tabs */}
@@ -270,16 +291,26 @@ export default function Notes() {
                         <span>📎 Attach files</span>
                         <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={handleFilePick} />
                     </div>
+                    {pendingFiles.length > 0 && (
+                        <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {pendingFiles.map((pf, idx) => (
+                                <span key={idx} style={{ padding: '5px 10px', background: '#333', borderRadius: '5px', fontSize: '0.85rem' }}>
+                                    {fileIcon(pf.type)} {pf.name} ({formatSize(pf.size)})
+                                    <button type="button" onClick={() => setPendingFiles(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', marginLeft: '5px' }}>✕</button>
+                                </span>
+                            ))}
+                        </div>
+                    )}
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '15px', color: '#ffb86c' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '15px', color: '#ccc' }}>
                         {activeTab === 'my_notes' ? (
                             <>
                                 <input type="checkbox" id="publicToggle" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} style={{ cursor: 'pointer', width: '20px', height: '20px' }} />
-                                <label htmlFor="publicToggle" style={{ cursor: 'pointer' }}>Share to Class {classLevel} Community</label>
+                                <label htmlFor="publicToggle" style={{ cursor: 'pointer' }}>Share to {classLevel} Community</label>
                             </>
                         ) : (
-                            <span style={{ color: '#00e5ff', fontSize: '0.9rem' }}>
-                                <span style={{ marginRight: '8px' }}>✓</span> This note will be published publicly to Class {classLevel}.
+                            <span style={{ color: '#fff', fontSize: '0.9rem' }}>
+                                <span style={{ marginRight: '8px' }}>✓</span> This note will be published publicly to {classLevel}.
                             </span>
                         )}
                     </div>
@@ -306,7 +337,7 @@ export default function Notes() {
             {highlightData && (
                 <button 
                     onClick={() => setShowAskModal(true)}
-                    style={{ position: 'fixed', left: highlightData.x, top: highlightData.y, transform: 'translateX(-50%)', backgroundColor: '#f59e0b', color: '#111', fontWeight: 'bold', padding: '5px 10px', borderRadius: '5px', border: 'none', cursor: 'pointer', zIndex: 1000, boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}
+                    style={{ position: 'fixed', left: highlightData.x, top: highlightData.y, transform: 'translateX(-50%)', backgroundColor: '#fff', color: '#000', fontWeight: 'bold', padding: '5px 10px', borderRadius: '5px', border: '1px solid #333', cursor: 'pointer', zIndex: 1000, boxShadow: '0 4px 6px rgba(0,0,0,0.5)' }}
                 >
                     Ask Q&A?
                 </button>
@@ -315,17 +346,17 @@ export default function Notes() {
             {/* Ask Modal */}
             {showAskModal && highlightData && (
                 <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100 }}>
-                    <div style={{ backgroundColor: '#2a2a35', padding: '30px', borderRadius: '15px', width: '400px', maxWidth: '90%' }}>
+                    <div style={{ backgroundColor: '#111', padding: '30px', borderRadius: '15px', width: '400px', maxWidth: '90%', border: '1px solid #333' }}>
                         <h2 style={{ margin: '0 0 15px', color: 'white' }}>Ask Community</h2>
-                        <div style={{ backgroundColor: '#1a1a25', padding: '10px', borderRadius: '5px', color: '#f59e0b', fontStyle: 'italic', marginBottom: '15px', fontSize: '0.9rem' }}>
+                        <div style={{ backgroundColor: '#222', padding: '10px', borderRadius: '5px', color: '#ccc', fontStyle: 'italic', marginBottom: '15px', fontSize: '0.9rem', borderLeft: '3px solid #555' }}>
                             "{highlightData.text}"
                         </div>
                         <form onSubmit={submitHighlightQuestion} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                            <input type="text" required placeholder="Question Title" value={questionTitle} onChange={e => setQuestionTitle(e.target.value)} style={{ padding: '10px', borderRadius: '5px', border: 'none' }} />
-                            <textarea required placeholder="More details..." value={questionBody} onChange={e => setQuestionBody(e.target.value)} rows={3} style={{ padding: '10px', borderRadius: '5px', border: 'none' }} />
+                            <input type="text" required placeholder="Question Title" value={questionTitle} onChange={e => setQuestionTitle(e.target.value)} style={{ padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#000', color: '#fff' }} />
+                            <textarea required placeholder="More details..." value={questionBody} onChange={e => setQuestionBody(e.target.value)} rows={3} style={{ padding: '10px', borderRadius: '5px', border: '1px solid #444', backgroundColor: '#000', color: '#fff' }} />
                             <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                                <button type="button" onClick={() => { setShowAskModal(false); setHighlightData(null); }} style={{ flex: 1, padding: '10px', borderRadius: '5px', cursor: 'pointer' }}>Cancel</button>
-                                <button type="submit" style={{ flex: 1, padding: '10px', borderRadius: '5px', backgroundColor: '#4a90e2', color: 'white', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>Post</button>
+                                <button type="button" onClick={() => { setShowAskModal(false); setHighlightData(null); }} style={{ flex: 1, padding: '10px', borderRadius: '5px', cursor: 'pointer', backgroundColor: '#333', color: '#fff', border: 'none' }}>Cancel</button>
+                                <button type="submit" style={{ flex: 1, padding: '10px', borderRadius: '5px', backgroundColor: '#fff', color: '#000', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>Post</button>
                             </div>
                         </form>
                     </div>
@@ -347,11 +378,30 @@ export default function Notes() {
                             <p style={{ whiteSpace: 'pre-wrap', color: '#eee' }}>{note.content}</p>
                         </div>
                         
+                        {note.files && note.files.length > 0 && (
+                            <div style={{ marginTop: '15px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                {note.files.map((file, idx) => (
+                                    <a 
+                                        key={idx} 
+                                        href={file.dataUrl} 
+                                        download={file.type === 'application/pdf' ? undefined : file.name}
+                                        target={file.type === 'application/pdf' ? "_blank" : undefined}
+                                        rel="noopener noreferrer"
+                                        style={{ backgroundColor: 'rgba(255,255,255,0.1)', padding: '8px 12px', borderRadius: '8px', color: 'white', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', transition: 'background 0.2s' }}
+                                    >
+                                        <span>{fileIcon(file.type)}</span>
+                                        <span style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{file.name}</span>
+                                        <span style={{ color: '#aaa', fontSize: '0.8rem' }}>({formatSize(file.size)})</span>
+                                    </a>
+                                ))}
+                            </div>
+                        )}
+                        
                         <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #333', textAlign: 'center' }}>
                             <button 
                                 onClick={() => generateFlashcards(note.content)}
                                 disabled={loadingFlashcards}
-                                style={{ backgroundColor: '#b14fff', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }}
+                                style={{ backgroundColor: '#fff', color: '#000', border: '1px solid #ccc', padding: '8px 15px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }}
                             >
                                 {loadingFlashcards ? 'Generating...' : '⚡ AI Flashcards'}
                             </button>
@@ -366,17 +416,17 @@ export default function Notes() {
                     <h2 style={{ color: 'white', marginBottom: '20px' }}>AI Flashcards ({activeFlashcardIndex + 1}/{flashcards.length})</h2>
                     <div 
                         onClick={() => setShowAnswer(!showAnswer)}
-                        style={{ backgroundColor: showAnswer ? '#4a90e2' : '#2a2a35', width: '500px', height: '300px', maxWidth: '90%', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}
+                        style={{ backgroundColor: showAnswer ? '#fff' : '#111', width: '500px', height: '300px', maxWidth: '90%', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.3s', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', border: showAnswer ? 'none' : '1px solid #444' }}
                     >
-                        <h3 style={{ color: 'white', fontSize: '1.5rem', fontWeight: showAnswer ? 'normal' : 'bold' }}>
+                        <h3 style={{ color: showAnswer ? '#000' : 'white', fontSize: '1.5rem', fontWeight: showAnswer ? 'normal' : 'bold' }}>
                             {showAnswer ? flashcards[activeFlashcardIndex].back : flashcards[activeFlashcardIndex].front}
                         </h3>
                     </div>
                     <p style={{ color: '#aaa', marginTop: '15px' }}>Click card to flip</p>
                     <div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}>
-                        <button onClick={() => { setActiveFlashcardIndex(Math.max(0, activeFlashcardIndex - 1)); setShowAnswer(false); }} disabled={activeFlashcardIndex === 0} style={{ padding: '10px 20px', borderRadius: '5px', cursor: 'pointer' }}>Previous</button>
-                        <button onClick={() => setFlashcards(null)} style={{ padding: '10px 20px', borderRadius: '5px', backgroundColor: '#ff4d4d', color: 'white', border: 'none', cursor: 'pointer' }}>Close</button>
-                        <button onClick={() => { setActiveFlashcardIndex(Math.min(flashcards.length - 1, activeFlashcardIndex + 1)); setShowAnswer(false); }} disabled={activeFlashcardIndex === flashcards.length - 1} style={{ padding: '10px 20px', borderRadius: '5px', cursor: 'pointer', backgroundColor: '#4ade80', border: 'none' }}>Next</button>
+                        <button onClick={() => { setActiveFlashcardIndex(Math.max(0, activeFlashcardIndex - 1)); setShowAnswer(false); }} disabled={activeFlashcardIndex === 0} style={{ padding: '10px 20px', borderRadius: '5px', cursor: 'pointer', backgroundColor: '#333', color: '#fff', border: 'none' }}>Previous</button>
+                        <button onClick={() => setFlashcards(null)} style={{ padding: '10px 20px', borderRadius: '5px', backgroundColor: '#111', color: '#fff', border: '1px solid #555', cursor: 'pointer' }}>Close</button>
+                        <button onClick={() => { setActiveFlashcardIndex(Math.min(flashcards.length - 1, activeFlashcardIndex + 1)); setShowAnswer(false); }} disabled={activeFlashcardIndex === flashcards.length - 1} style={{ padding: '10px 20px', borderRadius: '5px', cursor: 'pointer', backgroundColor: '#fff', color: '#000', border: 'none', fontWeight: 'bold' }}>Next</button>
                     </div>
                 </div>
             )}

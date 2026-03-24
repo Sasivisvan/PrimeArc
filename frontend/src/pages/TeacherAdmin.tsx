@@ -25,7 +25,7 @@ export default function TeacherAdmin() {
                         value={password} onChange={e => setPassword(e.target.value)}
                         style={{ padding: '15px', borderRadius: '8px', border: '1px solid #444', backgroundColor: '#1a1a25', color: 'white' }}
                     />
-                    <button type="submit" style={{ padding: '15px', backgroundColor: '#4a90e2', color: 'white', fontWeight: 'bold', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>
+                    <button type="submit" style={{ padding: '15px', backgroundColor: '#fff', color: '#000', fontWeight: 'bold', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>
                         Authenticate
                     </button>
                 </form>
@@ -38,7 +38,7 @@ export default function TeacherAdmin() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '40px' }}>
                 <div style={{ fontSize: '3rem' }}>🛡️</div>
                 <div>
-                    <h1 style={{ fontSize: '2.5rem', margin: 0, color: '#4ade80' }}>Teacher Admin Portal</h1>
+                    <h1 style={{ fontSize: '2.5rem', margin: 0, color: '#fff' }}>Teacher Admin Portal</h1>
                     <p style={{ color: '#aaa', margin: '5px 0 0 0', fontSize: '1.1rem' }}>Secure credentials index. Do not share this page directly with students.</p>
                 </div>
             </div>
@@ -49,12 +49,12 @@ export default function TeacherAdmin() {
                 </div>
                 
                 <div style={{ padding: '30px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', backgroundColor: '#22222d', borderRadius: '10px', borderLeft: '4px solid #b14fff' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', backgroundColor: '#111', borderRadius: '10px', borderLeft: '4px solid #fff' }}>
                         <div>
                             <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem' }}>Global Demo Password</h3>
                             <p style={{ margin: 0, color: '#888' }}>Applies to all classes currently in V4 Demo mode.</p>
                         </div>
-                        <div style={{ backgroundColor: '#111', padding: '10px 20px', borderRadius: '8px', border: '1px solid #444', color: '#4ade80', fontFamily: 'monospace', fontSize: '1.2rem', letterSpacing: '2px' }}>
+                        <div style={{ backgroundColor: '#000', padding: '10px 20px', borderRadius: '8px', border: '1px solid #333', color: '#fff', fontFamily: 'monospace', fontSize: '1.2rem', letterSpacing: '2px' }}>
                             primearc2026
                         </div>
                     </div>
