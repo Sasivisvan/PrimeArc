@@ -13,6 +13,11 @@ const classContentSchema = new mongoose.Schema({
         page: Number,
         createdAt: { type: Date, default: Date.now }
     }],
+    studyProgress: [{
+        user: { type: String, required: true },
+        pages: [{ type: Number }],
+        updatedAt: { type: Date, default: Date.now }
+    }],
     extractedText: [{
         page: Number,
         content: String

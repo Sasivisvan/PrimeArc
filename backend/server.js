@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import http from "http";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import ChatMessage from "./models/ChatMessage.js";
+import ChatState from "./models/ChatState.js";
 
 import { CreateUser, GetAllUsers } from "./controllers/UserController.js";
 import {GetAiResponse} from "./routes/GetAiResponse.js";
@@ -213,6 +214,63 @@ app.get("/chat-history", async (req, res) => {
     } catch (error) {
         console.error("Error in /chat-history:", error.message);
         res.status(500).json({ error: "Failed to fetch chat history" });
+    }
+});
+
+// GET /chat-state - Load saved multi-chat state for a user
+app.get("/chat-state", async (req, res) => {
+    try {
+        if (mongoose.connection.readyState !== 1) {
+            return res.json(null);
+        }
+        const reqUser = typeof req.query.user === 'string' && req.query.user.trim() ? req.query.user.trim() : 'anonymous';
+        const state = await ChatState.findOne({ user: reqUser }).lean();
+        res.json(state || null);
+    } catch (error) {
+        console.error("Error in /chat-state GET:", error.message);
+        res.status(500).json({ error: "Failed to fetch saved chat state" });
+    }
+});
+
+// PUT /chat-state - Persist multi-chat state for a user
+app.put("/chat-state", async (req, res) => {
+    try {
+        if (mongoose.connection.readyState !== 1) {
+            return res.status(503).json({ error: "Database unavailable" });
+        }
+
+        const { user, activeChatId, chats } = req.body;
+        const chatUser = typeof user === 'string' && user.trim() ? user.trim() : 'anonymous';
+
+        if (!activeChatId || !Array.isArray(chats)) {
+            return res.status(400).json({ error: "activeChatId and chats are required" });
+        }
+
+        const sanitizedChats = chats.slice(0, 25).map((chat) => ({
+            id: String(chat.id || ''),
+            title: String(chat.title || 'New Chat'),
+            model: chat.model === 'ollama' ? 'ollama' : 'gemini',
+            createdAt: Number(chat.createdAt || Date.now()),
+            updatedAt: Number(chat.updatedAt || Date.now()),
+            messages: Array.isArray(chat.messages)
+                ? chat.messages.slice(-100).map((msg) => ({
+                    role: msg.role === 'user' ? 'user' : 'ai',
+                    content: String(msg.content || ''),
+                    timestamp: Number(msg.timestamp || Date.now()),
+                }))
+                : [],
+        })).filter((chat) => chat.id);
+
+        const state = await ChatState.findOneAndUpdate(
+            { user: chatUser },
+            { user: chatUser, activeChatId, chats: sanitizedChats },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+
+        res.json({ ok: true, updatedAt: state.updatedAt });
+    } catch (error) {
+        console.error("Error in /chat-state PUT:", error.message);
+        res.status(500).json({ error: "Failed to save chat state" });
     }
 });
 

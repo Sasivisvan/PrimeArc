@@ -40,6 +40,12 @@ const geminiModel = new ChatGoogleGenerativeAI({
     maxOutputTokens: 2048,
 });
 
+function normalizeClassLevelValue(classLevel) {
+    if (classLevel === undefined || classLevel === null || classLevel === '') return undefined;
+    const num = Number(classLevel);
+    return Number.isNaN(num) ? classLevel : num;
+}
+
 // =======================
 // Feature 1: Class Content
 // =======================
@@ -206,6 +212,44 @@ router.post('/content/:id/comment', async (req, res) => {
     }
 });
 
+router.put('/content/:id/study-progress', async (req, res) => {
+    try {
+        const { user, pages } = req.body;
+        const normalizedUser = typeof user === 'string' && user.trim() ? user.trim() : '';
+        if (!normalizedUser) return res.status(400).json({ error: 'user is required' });
+        if (!Array.isArray(pages)) return res.status(400).json({ error: 'pages must be an array' });
+
+        const content = await ClassContent.findById(req.params.id);
+        if (!content) return res.status(404).json({ error: 'Not found' });
+
+        const normalizedPages = [...new Set(
+            pages
+                .map((page) => Number(page))
+                .filter((page) => Number.isInteger(page) && page > 0)
+        )].sort((a, b) => a - b);
+
+        const existingProgress = content.studyProgress.find((entry) => entry.user === normalizedUser);
+        if (existingProgress) {
+            existingProgress.pages = normalizedPages;
+            existingProgress.updatedAt = new Date();
+        } else {
+            content.studyProgress.push({
+                user: normalizedUser,
+                pages: normalizedPages,
+                updatedAt: new Date()
+            });
+        }
+
+        await content.save();
+        res.json({
+            ok: true,
+            studyProgress: content.studyProgress.find((entry) => entry.user === normalizedUser)
+        });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to save study progress', details: err.message });
+    }
+});
+
 // =======================
 // Feature 4: Tasks (Todo)
 // =======================
@@ -214,20 +258,21 @@ router.get('/tasks', async (req, res) => {
         // scope can be 'personal' or 'class'
         const { scope, classLevel, username } = req.query;
         let filter = {};
+        const normalizedClassLevel = normalizeClassLevelValue(classLevel);
         if (scope) {
             filter.scope = scope;
-            if (scope === 'class' && classLevel) filter.classLevel = Number(classLevel);
+            if (scope === 'class' && normalizedClassLevel !== undefined) filter.classLevel = normalizedClassLevel;
             if (scope === 'personal' && username) filter.createdBy = username;
         } else {
-            if (classLevel && username) {
+            if (normalizedClassLevel !== undefined && username) {
                 filter = {
                     $or: [
-                        { scope: 'class', classLevel: Number(classLevel) },
+                        { scope: 'class', classLevel: normalizedClassLevel },
                         { scope: 'personal', createdBy: username }
                     ]
                 };
-            } else if (classLevel) {
-                filter.classLevel = Number(classLevel);
+            } else if (normalizedClassLevel !== undefined) {
+                filter.classLevel = normalizedClassLevel;
                 filter.scope = 'class';
             }
         }
@@ -241,7 +286,11 @@ router.get('/tasks', async (req, res) => {
 
 router.post('/tasks', async (req, res) => {
     try {
-        const task = new Task(req.body);
+        const payload = { ...req.body };
+        if (payload.scope === 'class') {
+            payload.classLevel = normalizeClassLevelValue(payload.classLevel);
+        }
+        const task = new Task(payload);
         await task.save();
         res.status(201).json(task);
     } catch (err) {
@@ -253,6 +302,16 @@ router.put('/tasks/:id', async (req, res) => {
     try {
         const task = await Task.findByIdAndUpdate(req.params.id, req.body, { new: true });
         res.json(task);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.delete('/tasks/:id', async (req, res) => {
+    try {
+        const task = await Task.findByIdAndDelete(req.params.id);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
+        res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -299,10 +358,11 @@ router.post('/questions/:id/answers', async (req, res) => {
 // =======================
 router.get('/notes', async (req, res) => {
     try {
-        const { isPublic, classLevel } = req.query;
+        const { isPublic, classLevel, author } = req.query;
         const filter = {};
         if (isPublic !== undefined) filter.isPublic = isPublic === 'true';
         if (classLevel) filter.classLevel = Number(classLevel);
+        if (author) filter.author = author;
         
         const notes = await Note.find(filter).sort({ createdAt: -1 });
         res.json(notes);
@@ -321,18 +381,79 @@ router.post('/notes', async (req, res) => {
     }
 });
 
+router.put('/notes/:id', async (req, res) => {
+    try {
+        const note = await Note.findByIdAndUpdate(req.params.id, req.body, {
+            new: true,
+            runValidators: true,
+        });
+        if (!note) return res.status(404).json({ error: 'Not found' });
+        res.json(note);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.delete('/notes/:id', async (req, res) => {
+    try {
+        const note = await Note.findByIdAndDelete(req.params.id);
+        if (!note) return res.status(404).json({ error: 'Not found' });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // =======================
 // LLM Endpoints (Features 3 & 8)
 // =======================
 router.post('/generate-quiz', async (req, res) => {
     try {
-        const { topic, text, imageBase64, numQuestions, difficulty } = req.body;
+        const { topic, text, imageBase64, numQuestions, difficulty, contentId, documentTitle, pageNumber, pageText } = req.body;
         const nQ = numQuestions || 5;
         const diff = difficulty || 'medium';
-        const prompt = `Generate a JSON array of ${nQ} multiple choice questions to test understanding of this topic: ${topic}. 
-        The questions should be of ${diff} difficulty level.
-        Provided text/context: ${text || "Use general knowledge. If an image is provided, ensure questions are derived directly from the informational content inside the image."}
-        Return ONLY valid JSON in this exact format, with NO markdown code blocks, just raw JSON: 
+
+        let storedDocumentText = '';
+        if (contentId) {
+            const content = await ClassContent.findById(contentId).lean();
+            if (content?.extractedText?.length) {
+                storedDocumentText = content.extractedText
+                    .map((entry) => {
+                        const normalized = `${entry?.content || ''}`.replace(/\s+/g, ' ').trim();
+                        return normalized ? `[Page ${entry.page}] ${normalized}` : '';
+                    })
+                    .filter(Boolean)
+                    .join('\n\n');
+            }
+        }
+
+        const normalizedPageText = `${pageText || ''}`.replace(/\s+/g, ' ').trim();
+        const combinedContext = [text, storedDocumentText]
+            .map((part) => `${part || ''}`.trim())
+            .filter(Boolean)
+            .join('\n\n')
+            .slice(0, 30000);
+
+        if (!combinedContext && !imageBase64) {
+            return res.status(400).json({ error: 'Document material is required to generate a grounded quiz.' });
+        }
+
+        const prompt = `Generate a JSON array of ${nQ} multiple choice questions based strictly on the supplied study material.
+        Topic: ${topic}
+        Document title: ${documentTitle || 'Unknown'}
+        Difficulty: ${diff}
+        Current page number: ${pageNumber || 'Unknown'}
+        Current page text: ${normalizedPageText || 'Not provided'}
+
+        Use the provided document material as the primary and preferred source.
+        Do not fall back to unrelated general-knowledge questions when the material is available.
+        If the material is too thin for ${nQ} strong questions, generate fewer questions, but every question must stay grounded in the material.
+        Ensure each answer is supported by the supplied document context.
+
+        DOCUMENT MATERIAL:
+        ${combinedContext || 'No text provided. Use only the informational content visible in the supplied image.'}
+
+        Return ONLY valid JSON in this exact format, with NO markdown code blocks, just raw JSON:
         [{"question": "Q text", "options": ["A", "B", "C", "D"], "answer": "Correct Option Text", "explanation": "A one-sentence explanation of why it's correct"}]`;
 
         // Support string or tuple array formats for Langchain
@@ -377,7 +498,7 @@ router.post('/generate-flashcards', async (req, res) => {
 
 router.post('/airesponse', async (req, res) => {
     try {
-        const { prompt, contentId, history = [] } = req.body;
+        const { prompt, contentId, history = [], pageNumber, pageText, imageBase64 } = req.body;
         if (!prompt) return res.status(400).json({ error: "Prompt is required" });
 
         let context = "";
@@ -388,11 +509,17 @@ router.post('/airesponse', async (req, res) => {
             }
         }
 
-        const systemInstruction = `You are PrimeArc AI, a helpful educational assistant. 
-        Use the following document context to answer the user's question accurately. 
-        If the information is in the document, mention the page number clearly (e.g., "According to page 1...").
-        If the answer isn't in the document, say so but try to help with general knowledge.
-        
+        const systemInstruction = `You are PrimeArc AI, a helpful educational assistant.
+        The user is viewing a PDF document and may ask page-specific questions.
+        Prioritize the CURRENT PAGE context first, then use the broader document context.
+        If the information is in the current page or document, mention the page number clearly (e.g., "According to page 3...").
+        If the answer is uncertain because the page image/text is unclear, say that directly.
+        If the answer isn't in the document, say so briefly and then help with general knowledge.
+
+        CURRENT PAGE:
+        Page number: ${pageNumber || "Unknown"}
+        Page text: ${pageText || "No page-specific text provided."}
+
         CONTEXT:
         ${context || "No specific document context provided."}
         `;
@@ -404,11 +531,30 @@ router.post('/airesponse', async (req, res) => {
             ])
             : [];
 
-        const response = await geminiModel.invoke([
-            ['system', systemInstruction],
-            ...formattedHistory,
-            ['human', prompt]
-        ]);
+        let response;
+        if (imageBase64) {
+            const humanContent = [
+                {
+                    type: "text",
+                    text: `User question about page ${pageNumber || "current page"}:\n${prompt}`
+                },
+                {
+                    type: "image_url",
+                    image_url: imageBase64
+                }
+            ];
+            response = await geminiModel.invoke([
+                ['system', systemInstruction],
+                ...formattedHistory,
+                ['human', humanContent]
+            ]);
+        } else {
+            response = await geminiModel.invoke([
+                ['system', systemInstruction],
+                ...formattedHistory,
+                ['human', prompt]
+            ]);
+        }
 
         res.json({ content: response.content });
     } catch (err) {
