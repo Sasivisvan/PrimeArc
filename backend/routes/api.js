@@ -46,6 +46,12 @@ function normalizeClassLevelValue(classLevel) {
     return Number.isNaN(num) ? classLevel : num;
 }
 
+function canonicalContentFilePath(linkOrName) {
+    const match = `${linkOrName || ''}`.match(/\/api\/content-files\/([a-f0-9]{32}\.pdf)/i)
+        || `${linkOrName || ''}`.match(/^([a-f0-9]{32}\.pdf)$/i);
+    return match ? `/api/content-files/${match[1]}` : null;
+}
+
 // =======================
 // Feature 1: Class Content
 // =======================
@@ -57,8 +63,12 @@ router.get('/content', async (req, res) => {
             const num = Number(classLevel);
             filter.classLevel = isNaN(num) ? classLevel : num;
         }
-        const content = await ClassContent.find(filter).sort({ createdAt: -1 });
-        res.json(content);
+        const content = await ClassContent.find(filter).sort({ createdAt: -1 }).lean();
+        const normalizedContent = content.map((item) => {
+            const canonicalLink = canonicalContentFilePath(item.link);
+            return canonicalLink ? { ...item, link: canonicalLink } : item;
+        });
+        res.json(normalizedContent);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -125,8 +135,7 @@ router.post('/content/upload', (req, res, next) => {
             }
         }
 
-        const host = `${req.protocol}://${req.get('host')}`;
-        const link = `${host}/api/content-files/${req.file.filename}`;
+        const link = `/api/content-files/${req.file.filename}`;
 
         let extractedText = [];
         try {
@@ -277,8 +286,17 @@ router.get('/tasks', async (req, res) => {
             }
         }
         
-        const tasks = await Task.find(filter).sort({ createdAt: -1 });
-        res.json(tasks);
+        const normalizedUser = typeof username === 'string' && username.trim() ? username.trim() : '';
+        const tasks = await Task.find(filter).sort({ createdAt: -1 }).lean();
+        const resolvedTasks = tasks.map((task) => {
+            if (task.scope !== 'class') return task;
+            const completedBy = Array.isArray(task.completedBy) ? task.completedBy : [];
+            return {
+                ...task,
+                completed: normalizedUser ? completedBy.includes(normalizedUser) : false
+            };
+        });
+        res.json(resolvedTasks);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -289,6 +307,8 @@ router.post('/tasks', async (req, res) => {
         const payload = { ...req.body };
         if (payload.scope === 'class') {
             payload.classLevel = normalizeClassLevelValue(payload.classLevel);
+            payload.completed = false;
+            payload.completedBy = [];
         }
         const task = new Task(payload);
         await task.save();
@@ -300,8 +320,46 @@ router.post('/tasks', async (req, res) => {
 
 router.put('/tasks/:id', async (req, res) => {
     try {
-        const task = await Task.findByIdAndUpdate(req.params.id, req.body, { new: true });
-        res.json(task);
+        const task = await Task.findById(req.params.id);
+        if (!task) return res.status(404).json({ error: 'Task not found' });
+
+        if (task.scope === 'class' && Object.prototype.hasOwnProperty.call(req.body, 'completed')) {
+            const normalizedUser = typeof req.body.username === 'string' && req.body.username.trim()
+                ? req.body.username.trim()
+                : '';
+            if (!normalizedUser) {
+                return res.status(400).json({ error: 'username is required to update class task completion' });
+            }
+
+            const completedBy = new Set(Array.isArray(task.completedBy) ? task.completedBy : []);
+            if (req.body.completed) {
+                completedBy.add(normalizedUser);
+            } else {
+                completedBy.delete(normalizedUser);
+            }
+            task.completedBy = Array.from(completedBy);
+        } else {
+            if (Object.prototype.hasOwnProperty.call(req.body, 'completed')) {
+                task.completed = !!req.body.completed;
+            }
+        }
+
+        if (typeof req.body.title === 'string') task.title = req.body.title;
+        if (typeof req.body.description === 'string') task.description = req.body.description;
+        if (typeof req.body.priority === 'string') task.priority = req.body.priority;
+        if (Object.prototype.hasOwnProperty.call(req.body, 'dueDate')) {
+            task.dueDate = req.body.dueDate || undefined;
+        }
+        await task.save();
+
+        const normalizedUser = typeof req.body.username === 'string' && req.body.username.trim()
+            ? req.body.username.trim()
+            : '';
+        const responseTask = task.toObject();
+        if (responseTask.scope === 'class') {
+            responseTask.completed = normalizedUser ? responseTask.completedBy?.includes(normalizedUser) : false;
+        }
+        res.json(responseTask);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

@@ -4,6 +4,7 @@ const TaskSchema = new mongoose.Schema({
     title: { type: String, required: true },
     description: { type: String },
     completed: { type: Boolean, default: false },
+    completedBy: [{ type: String }],
     scope: { type: String, enum: ['personal', 'class'], default: 'personal' },
     classLevel: { type: mongoose.Schema.Types.Mixed }, // Only required if scope is 'class'
     createdBy: { type: String }, // username of who created it

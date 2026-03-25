@@ -198,7 +198,7 @@ const Chat = () => {
     const [hasLoadedRemoteState, setHasLoadedRemoteState] = useState(false);
     const [dbSyncAvailable, setDbSyncAvailable] = useState(true);
 
-    const { username } = useUser();
+    const { username, classLevel } = useUser();
     const chatStorageKey = makeChatStorageKey(username);
 
     const [chatState, setChatState] = useState<StoredChatState>(() => {
@@ -412,6 +412,7 @@ const Chat = () => {
                 body: JSON.stringify({
                     message: trimmed,
                     user: username,
+                    classLevel,
                     history: nextHistory.slice(-10).map(({ role, content }) => ({ role, content }))
                 })
             });
@@ -469,6 +470,7 @@ const Chat = () => {
                 body: JSON.stringify({
                     message: trimmed,
                     user: username,
+                    classLevel,
                     history: nextHistory.slice(-10).map(({ role, content }) => ({ role, content }))
                 })
             });

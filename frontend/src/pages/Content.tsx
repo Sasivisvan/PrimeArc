@@ -57,6 +57,15 @@ function contentPdfDocumentSrc(link: string) {
     return `${base}/api/proxy-pdf?url=${encodeURIComponent(t)}`;
 }
 
+function contentExternalUrl(link: string) {
+    const base = apiBaseUrl();
+    const t = link.trim();
+    if (/\/api\/content-files\/[a-f0-9]{32}\.pdf/i.test(t)) {
+        return `${base}${t.startsWith('/') ? t : `/${t}`}`;
+    }
+    return t;
+}
+
 const AVAILABLE_TAGS = [
     'Mathematics for Computing 4', 
     'Introduction to Communication & IoT', 
@@ -650,7 +659,7 @@ export default function Content() {
                             {studiedPages.length}/{numPages || '...'} Studied
                         </span>
                     </div>
-                    <a href={activeViewerItem.link} target="_blank" rel="noreferrer" className="text-sm text-gray-400 hover:text-white underline">
+                    <a href={contentExternalUrl(activeViewerItem.link)} target="_blank" rel="noreferrer" className="text-sm text-gray-400 hover:text-white underline">
                         Open externally
                     </a>
                 </div>
@@ -690,7 +699,7 @@ export default function Content() {
                                 <ZoomIn className="w-4 h-4" />
                             </button>
                             <div className="w-px h-4 bg-white/10 mx-1" />
-                            <a href={activeViewerItem.link} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-white/10 rounded-full transition-colors">
+                            <a href={contentExternalUrl(activeViewerItem.link)} target="_blank" rel="noreferrer" className="p-1.5 hover:bg-white/10 rounded-full transition-colors">
                                 <Download className="w-4 h-4" />
                             </a>
                             {username && (
@@ -732,7 +741,7 @@ export default function Content() {
                                                     ? 'The PDF could not be read from PrimeArc storage. Try opening it directly or re-uploading the file.'
                                                     : 'This external PDF link is unavailable or expired. Re-upload the PDF to PrimeArc storage instead of relying on a temporary external link.'}
                                             </p>
-                                            <a href={activeViewerItem.link} target="_blank" rel="noreferrer" className="px-6 py-2 bg-white text-black rounded-full font-bold">Open Direct Link</a>
+                                            <a href={contentExternalUrl(activeViewerItem.link)} target="_blank" rel="noreferrer" className="px-6 py-2 bg-white text-black rounded-full font-bold">Open Direct Link</a>
                                         </div>
                                     }
                                 >
@@ -1123,7 +1132,7 @@ export default function Content() {
                                         {isLocal && <span className="px-3 py-1 bg-white/5 rounded-full text-[10px] font-bold uppercase tracking-wider text-gray-500 inline-flex items-center gap-1"><FileText className="w-3 h-3" /> Offline Demo</span>}
                                     </div>
                                     <h3 className="text-2xl font-bold mb-2 group-hover:text-white/90 transition-colors">
-                                        <a href={item.link} target="_blank" rel="noopener noreferrer" onClick={(e) => { 
+                                        <a href={contentExternalUrl(item.link)} target="_blank" rel="noopener noreferrer" onClick={(e) => { 
                                             if(!isLocal && item.link !== '#') {
                                                 e.preventDefault();
                                                 setActiveViewerId(item._id);

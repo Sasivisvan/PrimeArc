@@ -6,6 +6,7 @@ import http from "http";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import ChatMessage from "./models/ChatMessage.js";
 import ChatState from "./models/ChatState.js";
+import Task from "./models/Task.js";
 
 import { CreateUser, GetAllUsers } from "./controllers/UserController.js";
 import {GetAiResponse} from "./routes/GetAiResponse.js";
@@ -97,10 +98,50 @@ const geminiModel = new ChatGoogleGenerativeAI({
     maxOutputTokens: 2048,
 });
 
+function normalizeClassLevelValue(classLevel) {
+    if (classLevel === undefined || classLevel === null || classLevel === '') return undefined;
+    const num = Number(classLevel);
+    return Number.isNaN(num) ? classLevel : num;
+}
+
+async function buildTaskContext(chatUser, classLevel) {
+    if (mongoose.connection.readyState !== 1 || !chatUser || chatUser === 'anonymous') return '';
+
+    const normalizedClassLevel = normalizeClassLevelValue(classLevel);
+    const filter = normalizedClassLevel !== undefined
+        ? {
+            $or: [
+                { scope: 'personal', createdBy: chatUser },
+                { scope: 'class', classLevel: normalizedClassLevel }
+            ]
+        }
+        : { scope: 'personal', createdBy: chatUser };
+
+    const tasks = await Task.find(filter).sort({ createdAt: -1 }).lean();
+    if (!tasks.length) return '';
+
+    const lines = tasks.map((task, index) => {
+        const dueDate = task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : 'None';
+        const createdAt = task.createdAt ? new Date(task.createdAt).toISOString().slice(0, 10) : 'Unknown';
+        return [
+            `${index + 1}. ${task.title}`,
+            `scope=${task.scope}`,
+            `status=${task.completed ? 'completed' : 'active'}`,
+            `priority=${task.priority || 'Medium'}`,
+            `dueDate=${dueDate}`,
+            `createdBy=${task.createdBy || 'Unknown'}`,
+            `createdAt=${createdAt}`,
+            `description=${task.description || 'None'}`
+        ].join(' | ');
+    });
+
+    return `USER TASKS:\n${lines.join('\n')}`;
+}
+
 // POST /chat - Send a message
 app.post("/chat", async (req, res) => {
     try {
-        const { message, history = [], user } = req.body;
+        const { message, history = [], user, classLevel } = req.body;
         const chatUser = typeof user === 'string' && user.trim() ? user.trim() : 'anonymous';
         
         if (!message || !message.trim()) {
@@ -118,8 +159,16 @@ app.post("/chat", async (req, res) => {
             .slice(-10) // Only use last 10 messages for performance
             .map(msg => [msg.role === 'user' ? 'human' : 'ai', msg.content]);
 
+        const taskContext = await buildTaskContext(chatUser, classLevel);
+        const systemPrompt = `You are PrimeArc AI — a highly intelligent, friendly assistant. Be clear, concise, and helpful.
+${taskContext ? `
+You have access to the user's task list and metadata. When the user asks about their tasks, answer using that task data first.
+If task information is missing from the provided task list, say so plainly instead of inventing details.
+
+${taskContext}` : ''}`;
+
         const response = await geminiModel.invoke([
-            ["system", "You are PrimeArc AI — a highly intelligent, friendly assistant. Be clear, concise, and helpful."],
+            ["system", systemPrompt],
             ...formattedHistory,
             ["human", message]
         ]);
@@ -143,63 +192,82 @@ app.post("/chat", async (req, res) => {
 
 // POST /api/ollama/chat — real-time streaming from local Ollama server
 app.post("/api/ollama/chat", (req, res) => {
-    const { message, history = [] } = req.body;
+    const { message, history = [], user, classLevel } = req.body;
 
     if (!message || !message.trim()) {
         return res.status(400).json({ error: "Message cannot be empty" });
     }
 
-    // Build messages array in Ollama format
-    const messages = [
-        { role: "system", content: "You are PrimeArc AI — a highly intelligent, friendly assistant. Be clear, concise, and helpful." },
-        ...history.slice(-10).map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.content })),
-        { role: "user", content: message.trim() }
-    ];
+    Promise.resolve()
+        .then(async () => {
+            const chatUser = typeof user === 'string' && user.trim() ? user.trim() : 'anonymous';
+            const taskContext = await buildTaskContext(chatUser, classLevel);
+            const systemPrompt = `You are PrimeArc AI — a highly intelligent, friendly assistant. Be clear, concise, and helpful.
+${taskContext ? `
+You have access to the user's task list and metadata. When the user asks about their tasks, answer using that task data first.
+If task information is missing from the provided task list, say so plainly instead of inventing details.
 
-    const body = JSON.stringify({
-        model: "qwen2.5:7b",
-        messages,
-        stream: true
-    });
+${taskContext}` : ''}`;
 
-    const options = {
-        hostname: "localhost",
-        port: 11434,
-        path: "/api/chat",
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Content-Length": Buffer.byteLength(body)
-        }
-    };
+            const messages = [
+                { role: "system", content: systemPrompt },
+                ...history.slice(-10).map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.content })),
+                { role: "user", content: message.trim() }
+            ];
 
-    res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("Transfer-Encoding", "chunked");
-    res.setHeader("Cache-Control", "no-cache");
-    res.flushHeaders();
+            const body = JSON.stringify({
+                model: "qwen2.5:7b",
+                messages,
+                stream: true
+            });
 
-    const ollamaReq = http.request(options, (ollamaRes) => {
-        ollamaRes.on("data", (chunk) => {
-            res.write(chunk);
+            const options = {
+                hostname: "localhost",
+                port: 11434,
+                path: "/api/chat",
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Content-Length": Buffer.byteLength(body)
+                }
+            };
+
+            res.setHeader("Content-Type", "application/x-ndjson");
+            res.setHeader("Transfer-Encoding", "chunked");
+            res.setHeader("Cache-Control", "no-cache");
+            res.flushHeaders();
+
+            const ollamaReq = http.request(options, (ollamaRes) => {
+                ollamaRes.on("data", (chunk) => {
+                    res.write(chunk);
+                });
+                ollamaRes.on("end", () => {
+                    res.end();
+                });
+            });
+
+            ollamaReq.on("error", (err) => {
+                console.error("Ollama connection error:", err.message);
+                if (!res.headersSent) {
+                    res.status(503).json({ error: "Ollama server is not running. Start it with: ollama serve" });
+                } else {
+                    res.write(JSON.stringify({ error: "Ollama disconnected unexpectedly" }) + "\n");
+                    res.end();
+                }
+            });
+
+            ollamaReq.write(body);
+            ollamaReq.end();
+        })
+        .catch((err) => {
+            console.error("Error in /api/ollama/chat:", err.message);
+            if (!res.headersSent) {
+                res.status(500).json({ error: "Failed to prepare task-aware chat context." });
+            } else {
+                res.write(JSON.stringify({ error: "Failed to prepare task-aware chat context." }) + "\n");
+                res.end();
+            }
         });
-        ollamaRes.on("end", () => {
-            res.end();
-        });
-    });
-
-    ollamaReq.on("error", (err) => {
-        console.error("Ollama connection error:", err.message);
-        if (!res.headersSent) {
-            res.status(503).json({ error: "Ollama server is not running. Start it with: ollama serve" });
-        } else {
-            // Stream already started — send a final error chunk
-            res.write(JSON.stringify({ error: "Ollama disconnected unexpectedly" }) + "\n");
-            res.end();
-        }
-    });
-
-    ollamaReq.write(body);
-    ollamaReq.end();
 });
 
 // GET /chat-history - Load previous messages
