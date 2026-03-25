@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;800&family=Orbitron:wght@500;700;900&display=swap');
 
 /* ────────────────────────────────────────
    BASE RESET & GLOBAL
@@ -75,10 +75,10 @@ html, body, #root {
 }
 
 .brand-title {
-  font-family: 'Outfit', sans-serif;
-  font-size: 1.7rem;
+  font-family: 'Orbitron', 'Outfit', sans-serif;
+  font-size: 2.2rem;
   font-weight: 800;
-  background: transparent;
+  background: #fff;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -1239,4 +1239,62 @@ kbd {
   margin: 8px 0;
 }
 
-.md-spacer { height: 4px; }
+.md-spacer { height: 6px; }
+
+/* ── Strikethrough ── */
+.msg-formatted .md-strike { text-decoration: line-through; color: #888; }
+
+/* ── Links ── */
+.msg-formatted .md-link {
+  color: #7eb8f7;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s;
+}
+.msg-formatted .md-link:hover { color: #add4ff; }
+
+/* ── Blockquote ── */
+.msg-formatted .md-blockquote {
+  border-left: 3px solid rgba(255,255,255,0.2);
+  margin: 6px 0;
+  padding: 6px 14px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 0 8px 8px 0;
+  color: #aaa;
+  font-style: italic;
+}
+.msg-formatted .md-blockquote p { margin: 2px 0; }
+
+/* ── Table ── */
+.msg-formatted .md-table-wrap {
+  overflow-x: auto;
+  margin: 8px 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.msg-formatted .md-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.msg-formatted .md-table th {
+  background: rgba(255,255,255,0.06);
+  color: #ddd;
+  font-weight: 600;
+  padding: 9px 14px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  white-space: nowrap;
+}
+
+.msg-formatted .md-table td {
+  padding: 8px 14px;
+  color: #bbb;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+.msg-formatted .md-table tr:last-child td { border-bottom: none; }
+.msg-formatted .md-table tr:hover td { background: rgba(255,255,255,0.02); }
+

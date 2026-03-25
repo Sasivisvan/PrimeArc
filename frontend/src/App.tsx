@@ -11,7 +11,9 @@ import Content from "./pages/Content";
 import Community from "./pages/Community";
 import StudyTube from "./pages/StudyTube";
 import Quizzes from "./pages/Quizzes";
+import Flashcards from "./pages/Flashcards";
 import TeacherAdmin from "./pages/TeacherAdmin";
+import Programming from "./pages/Programming";
 import LoginV3 from "./pages/Login";
 import { UserProvider, useUser } from "./context/UserContext";
 
@@ -36,15 +38,19 @@ const Navbar = () => {
         <nav className="top-nav-bar">
             <div className="top-nav-inner">
                 <div className="top-nav-left">
-                    <div className="brand-title" onClick={() => navigate("/")}>PrimeArc</div>
+                    <div className="brand-title" onClick={() => navigate("/")} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', margin: 0 }}>
+                        PrimeArc
+                    </div>
                     <div className="nav-links">
                     <button className={`nav-btn ${currentPath === '/' ? 'active' : ''}`} onClick={() => navigate("/")}>Chat</button>
                     <button className={`nav-btn ${currentPath === '/content' ? 'active' : ''}`} onClick={() => navigate("/content")}>Content</button>
                     <button className={`nav-btn ${currentPath === '/tasks' ? 'active' : ''}`} onClick={() => navigate("/tasks")}>Tasks</button>
                     <button className={`nav-btn ${currentPath === '/notes' ? 'active' : ''}`} onClick={() => navigate("/notes")}>Notes</button>
                     <button className={`nav-btn ${currentPath === '/quizzes' ? 'active' : ''}`} onClick={() => navigate("/quizzes")}>Quiz</button>
+                    <button className={`nav-btn ${currentPath === '/flashcards' ? 'active' : ''}`} onClick={() => navigate("/flashcards")}>Flashcards</button>
                     <button className={`nav-btn ${currentPath === '/studytube' ? 'active' : ''}`} onClick={() => navigate("/studytube")}>StudyTube</button>
                     <button className={`nav-btn ${currentPath === '/MyResources' ? 'active' : ''}`} onClick={() => navigate("/MyResources")}>Resources</button>
+                    <button className={`nav-btn ${currentPath === '/programming' ? 'active' : ''}`} onClick={() => navigate("/programming")}>Programming</button>
                     </div>
                 </div>
             
@@ -84,7 +90,9 @@ const AppContent = () => {
                     <Route path="/community" element={<Community />} />
                     <Route path="/studytube" element={<StudyTube />} />
                     <Route path="/quizzes" element={<Quizzes />} />
+                    <Route path="/flashcards" element={<Flashcards />} />
                     <Route path="/MyResources" element={<MyResources />} />
+                    <Route path="/programming" element={<Programming />} />
 
                     {/* Main Branch Public Routes */}
                     <Route path="/login" element={<LoginPage />} />

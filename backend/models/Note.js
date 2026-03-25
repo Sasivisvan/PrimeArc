@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const NoteSchema = new mongoose.Schema({
     title: { type: String, required: true },
-    content: { type: String, required: true },
+    content: { type: String, default: '' },
     author: { type: String, default: 'Student' },
     classLevel: { type: mongoose.Schema.Types.Mixed },
     isPublic: { type: Boolean, default: false }, // For sharing with others

@@ -11,7 +11,12 @@ const classContentSchema = new mongoose.Schema({
         user: String,
         text: String,
         page: Number,
-        createdAt: { type: Date, default: Date.now }
+        createdAt: { type: Date, default: Date.now },
+        replies: [{
+            user: String,
+            text: String,
+            createdAt: { type: Date, default: Date.now }
+        }]
     }],
     studyProgress: [{
         user: { type: String, required: true },

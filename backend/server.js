@@ -123,10 +123,11 @@ async function buildTaskContext(chatUser, classLevel) {
     const lines = tasks.map((task, index) => {
         const dueDate = task.dueDate ? new Date(task.dueDate).toISOString().slice(0, 10) : 'None';
         const createdAt = task.createdAt ? new Date(task.createdAt).toISOString().slice(0, 10) : 'Unknown';
+        const isCompletedForUser = task.scope === 'class' ? (task.completedBy && task.completedBy.includes(chatUser)) : task.completed;
         return [
             `${index + 1}. ${task.title}`,
             `scope=${task.scope}`,
-            `status=${task.completed ? 'completed' : 'active'}`,
+            `status=${isCompletedForUser ? 'completed' : 'active'}`,
             `priority=${task.priority || 'Medium'}`,
             `dueDate=${dueDate}`,
             `createdBy=${task.createdBy || 'Unknown'}`,

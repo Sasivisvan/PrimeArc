@@ -2,6 +2,7 @@
 import { User, Bot, FileText } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { renderMarkdown } from '../../utils/renderMarkdown';
 
 function cn(...inputs: (string | undefined | null | false)[]) {
     return twMerge(clsx(inputs));
@@ -36,7 +37,10 @@ export default function ChatMessage({ role, content, citations }: ChatMessagePro
                     ? "rounded-tl-none bg-surface/50 border-white/5 text-gray-200"
                     : "rounded-tr-none bg-white/5 border-white/10 text-white shadow-sm"
             )}>
-                <p className="leading-relaxed whitespace-pre-wrap">{content}</p>
+                {isAi
+                    ? <div className="msg-formatted">{renderMarkdown(content)}</div>
+                    : <p className="leading-relaxed whitespace-pre-wrap">{content}</p>
+                }
 
                 {citations && citations.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2 pt-3 border-t border-white/5">

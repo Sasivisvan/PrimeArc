@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useUser } from '../context/UserContext';
 import { Search, Paperclip, X, Check, FileImage, FileText, FileSpreadsheet, Video, Music, PaperclipIcon, Sparkles } from 'lucide-react';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
+import pdfWorkerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Download, SendHorizontal, Bot, MessageSquare, Plus, ArrowLeft, User, Trash2, Upload } from 'lucide-react';
+
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+
 const MAX_FILE_SIZE_MB = 5;
 
 function apiBaseUrl() {
@@ -52,10 +62,10 @@ export default function Notes() {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [showAddForm, setShowAddForm] = useState(false);
     
-    const [newTitle, setNewTitle] = useState('');
-    const [newContent, setNewContent] = useState('');
+    const [title, setTitle] = useState('');
+    const [content, setContent] = useState('');
     const [isPublic, setIsPublic] = useState(false);
-    const [pendingFiles, setPendingFiles] = useState<AttachedFile[]>([]);
+    const [simulatedFile, setSimulatedFile] = useState<File | null>(null);
     
     // Feature: Flashcards
     const [flashcards, setFlashcards] = useState<any[] | null>(null);
@@ -68,7 +78,95 @@ export default function Notes() {
     const [showAskModal, setShowAskModal] = useState(false);
     const [questionTitle, setQuestionTitle] = useState('');
     const [questionBody, setQuestionBody] = useState('');
-    const [noteUploadProgress, setNoteUploadProgress] = useState<number | null>(null);
+    const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+    const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+    const [aiPrompt, setAiPrompt] = useState('');
+    const [aiMessages, setAiMessages] = useState<{role:'user'|'ai', content:string}[]>([]);
+    const [isAiLoading, setIsAiLoading] = useState(false);
+    
+    // PDF Viewer states
+    const [numPages, setNumPages] = useState<number | null>(null);
+    const [pageNumber, setPageNumber] = useState<number>(1);
+    const [scale, setScale] = useState<number>(1.2);
+    const [currentPageText, setCurrentPageText] = useState('');
+    const [currentPageImage, setCurrentPageImage] = useState<string | null>(null);
+    const viewerPageRef = useRef<HTMLDivElement | null>(null);
+
+    function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
+        setNumPages(numPages);
+        setPageNumber(1);
+    }
+
+    const captureCurrentPageContext = () => {
+        const container = viewerPageRef.current;
+        if (!container) return;
+
+        const textSpans = Array.from(container.querySelectorAll('.react-pdf__Page__textContent span'));
+        const text = textSpans
+            .map((span) => (span.textContent || '').trim())
+            .filter(Boolean)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        setCurrentPageText(text);
+
+        const canvas = container.querySelector('canvas');
+        if (!canvas) {
+            setCurrentPageImage(null);
+            return;
+        }
+
+        try {
+            const image = canvas.toDataURL('image/jpeg', 0.72);
+            setCurrentPageImage(image);
+        } catch {
+            setCurrentPageImage(null);
+        }
+    };
+
+    const handleAiSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!aiPrompt.trim()) return;
+        
+        const currentPrompt = aiPrompt;
+        setAiPrompt('');
+        setIsAiLoading(true);
+        const historyForRequest = [...aiMessages, { role: 'user' as const, content: currentPrompt }];
+        setAiMessages(historyForRequest);
+
+        try {
+            const baseUrl = apiBaseUrl();
+            const activeNote = activeNotes.find(n => n.id === activeNoteId);
+            
+            // Build text context for the AI
+            const contextItems = [];
+            if (activeNote?.content) contextItems.push(`Note Content: ${activeNote.content}`);
+            
+            const res = await fetch(`${baseUrl}/api/airesponse`, {
+                method: "POST",
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    prompt: currentPrompt, 
+                    history: historyForRequest,
+                    pageNumber,
+                    pageText: currentPageText || contextItems.join('\n\n'),
+                    imageBase64: currentPageImage
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setAiMessages(prev => [...prev, { role: 'ai', content: data.content || data.reply || data.text || "Empty response." }]);
+            } else {
+                setAiMessages(prev => [...prev, { role: 'ai', content: "Error: " + (data.error || "Unknown error") }]);
+            }
+        } catch (err: any) {
+            setAiMessages(prev => [...prev, { role: 'ai', content: "Error connecting to AI." }]);
+        } finally {
+            setIsAiLoading(false);
+        }
+    };
+
+
     const [isSavingNote, setIsSavingNote] = useState(false);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -121,69 +219,79 @@ export default function Notes() {
         fetchCommunityNotes();
     }, [classLevel, username]);
 
-    const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files || []);
-        const results: AttachedFile[] = [];
-        for (const file of files) {
-            if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) continue;
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            await new Promise(r => reader.onload = r);
-            results.push({ name: file.name, type: file.type, size: file.size, dataUrl: reader.result as string });
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files.length > 0) {
+            setSimulatedFile(e.target.files[0]);
         }
-        setPendingFiles(prev => [...prev, ...results]);
-        e.target.value = '';
     };
 
-    const addNote = async () => {
-        const title = newTitle.trim() || 'Untitled Note';
-        const content = newContent.trim();
-        if (!content && pendingFiles.length === 0) return;
-
+    const handleUpload = async (e: React.FormEvent) => {
+        e.preventDefault();
         setIsSavingNote(true);
-        setNoteUploadProgress(0);
+        setUploadProgress(0);
+
         try {
+            const formData = new FormData();
+            if (simulatedFile) formData.append('file', simulatedFile);
+            formData.append('title', title.trim() || 'Untitled Note');
+            formData.append('content', content.trim());
+            formData.append('classLevel', String(classLevel));
+            formData.append('author', username || '');
+            formData.append('isPublic', String(isPublic));
+
             const baseUrl = apiBaseUrl();
+            const endpoint = simulatedFile ? `${baseUrl}/api/notes/upload` : `${baseUrl}/api/notes`;
+            
             const xhr = new XMLHttpRequest();
             const result = await new Promise<{ ok: boolean; status: number; data: any }>((resolve, reject) => {
-                xhr.open('POST', `${baseUrl}/api/notes`);
-                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.open('POST', endpoint);
+                if (!simulatedFile) {
+                    xhr.setRequestHeader('Content-Type', 'application/json');
+                }
                 xhr.upload.onprogress = (event) => {
                     if (event.lengthComputable) {
-                        setNoteUploadProgress(Math.round((event.loaded / event.total) * 100));
+                        setUploadProgress(Math.round((event.loaded / event.total) * 100));
                     }
                 };
                 xhr.onload = () => {
                     try {
                         const data = xhr.responseText ? JSON.parse(xhr.responseText) : {};
                         resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data });
-                    } catch (err) {
-                        reject(err);
-                    }
+                    } catch (err) { reject(err); }
                 };
                 xhr.onerror = () => reject(new Error('Network error'));
-                xhr.send(JSON.stringify({ title, content, author: username, classLevel, isPublic, files: pendingFiles }));
+                
+                if (simulatedFile) {
+                    xhr.send(formData);
+                } else {
+                    xhr.send(JSON.stringify({ 
+                        title: title.trim() || 'Untitled Note', 
+                        content: content.trim(), 
+                        author: username, 
+                        classLevel, 
+                        isPublic 
+                    }));
+                }
             });
 
             if (!result.ok) {
-                alert(`Failed to add note: ${result.data?.error || 'Server error'}\n${result.data?.details || 'Please check MongoDB IP whitelist.'}`);
+                alert(`Upload failed: ${result.data?.error || 'Server error'}`);
                 return;
             }
 
             await Promise.all([fetchMyNotes(), fetchCommunityNotes()]);
             setActiveTab(isPublic ? 'community' : 'my_notes');
-            setNewTitle('');
-            setNewContent('');
-            setPendingFiles([]);
+            setTitle('');
+            setContent('');
+            setSimulatedFile(null);
             setIsPublic(false);
             setShowAddForm(false);
-        } catch (err: any) { 
-            console.error(err); 
+        } catch (err: any) {
+            console.error(err);
             alert(`Network error: ${err.message}`);
-            return;
         } finally {
             setIsSavingNote(false);
-            setTimeout(() => setNoteUploadProgress(null), 400);
+            setTimeout(() => setUploadProgress(null), 400);
         }
     };
 
@@ -283,6 +391,178 @@ export default function Notes() {
     const activeNotes = activeTab === 'my_notes' ? myNotes : communityNotes;
     const filtered = activeNotes.filter(n => n.title.toLowerCase().includes(search.toLowerCase()) || n.content.toLowerCase().includes(search.toLowerCase()));
 
+    
+    const activeNote = activeTab === 'my_notes' ? myNotes.find(n => n.id === activeNoteId) : communityNotes.find(n => n.id === activeNoteId);
+    
+    if (activeNoteId && activeNote) {
+        const firstPdfFile = activeNote.files?.find(f => f.type === 'application/pdf');
+        
+        return (
+            <div className="flex flex-col h-full w-full bg-black text-white absolute inset-0 z-50 overflow-hidden">
+                {/* Top Bar */}
+                <div className="flex items-center justify-between p-4 border-b border-white/10 shrink-0 bg-white/5 backdrop-blur-md">
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={() => setActiveNoteId(null)} 
+                            className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition text-white flex items-center gap-2 text-sm font-bold pr-4"
+                        >
+                            <ArrowLeft size={16} /> Back
+                        </button>
+                        <h2 className="text-xl font-bold m-0">{activeNote.title}</h2>
+                        <span className="text-gray-400 text-sm">Author: {activeNote.author}</span>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-hidden flex flex-col sm:flex-row relative">
+                    {/* LEFT: Main Viewer Area (≈75%) */}
+                    <div className="w-full sm:w-3/4 flex flex-col border-r border-white/10 bg-[#0a0a0a] relative group/viewer overflow-hidden">
+                        {firstPdfFile ? (
+                            <div className="flex-1 overflow-auto flex flex-col items-center py-10 scrollbar-hide bg-[#1a1a1a] relative">
+                                {/* PDF Toolbar - Absolute Centered Floating Pill */}
+                                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-4 py-2 bg-black/60 backdrop-blur-xl border border-white/10 rounded-full opacity-0 group-hover/viewer:opacity-100 transition-opacity duration-300 shadow-2xl">
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={(e) => { e.stopPropagation(); setPageNumber(p => Math.max(1, p - 1)); }} disabled={pageNumber <= 1} className="p-1.5 hover:bg-white/10 rounded-full transition-colors disabled:opacity-30"><ChevronLeft className="w-4 h-4" /></button>
+                                        <span className="text-[10px] font-bold px-2 whitespace-nowrap min-w-[80px] text-center uppercase tracking-tight">Page {pageNumber} of {numPages || '--'}</span>
+                                        <button onClick={(e) => { e.stopPropagation(); setPageNumber(p => Math.min(numPages || p, p + 1)); }} disabled={pageNumber >= (numPages || 1)} className="p-1.5 hover:bg-white/10 rounded-full transition-colors disabled:opacity-30"><ChevronRight className="w-4 h-4" /></button>
+                                    </div>
+                                    <div className="w-px h-4 bg-white/10 mx-1" />
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={(e) => { e.stopPropagation(); setScale(s => Math.max(0.5, s - 0.2)); }} className="p-1.5 hover:bg-white/10 rounded-full transition-colors"><ZoomOut className="w-4 h-4" /></button>
+                                        <span className="text-[10px] font-bold px-2 min-w-[40px] text-center">{Math.round(scale * 100)}%</span>
+                                        <button onClick={(e) => { e.stopPropagation(); setScale(s => Math.min(3, s + 0.2)); }} className="p-1.5 hover:bg-white/10 rounded-full transition-colors"><ZoomIn className="w-4 h-4" /></button>
+                                    </div>
+                                </div>
+                                
+                                <div ref={viewerPageRef} className="shadow-2xl shadow-black ring-1 ring-white/10 bg-white">
+                                        <Document file={firstPdfFile.dataUrl.startsWith('http') ? firstPdfFile.dataUrl : `${apiBaseUrl()}${firstPdfFile.dataUrl}`} onLoadSuccess={onDocumentLoadSuccess}>
+                                            <Page 
+                                                pageNumber={pageNumber} 
+                                                scale={scale} 
+                                                onRenderSuccess={() => requestAnimationFrame(() => requestAnimationFrame(captureCurrentPageContext))}
+                                                renderAnnotationLayer={false}
+                                                renderTextLayer={true}
+                                                className="rounded-sm overflow-hidden"
+                                            />
+                                        </Document>
+                                    </div>
+                                        <div className="mt-8 p-6 glass w-full max-w-4xl text-left mx-auto shrink-0 shadow-lg border border-white/5">
+                                            <h3 className="font-bold mb-4 border-b border-white/10 pb-2 flex items-center gap-2">
+                                                <div className="w-1 h-4 bg-white/20 rounded-full" />
+                                                Author Note
+                                            </h3>
+                                            <p className="whitespace-pre-wrap text-gray-300 text-sm leading-relaxed">{activeNote.content}</p>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="p-10 max-w-4xl mx-auto w-full" ref={viewerPageRef}>
+                                <div className="glass p-8 rounded-2xl mb-8">
+                                    <h2 className="text-3xl font-bold mb-6">{activeNote.title}</h2>
+                                    <p className="whitespace-pre-wrap text-lg leading-relaxed text-gray-200">{activeNote.content}</p>
+                                </div>
+                                {activeNote.files && activeNote.files.length > 0 && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        {activeNote.files.map((file, idx) => (
+                                            <div key={idx} className="bg-white/5 border border-white/10 p-4 rounded-xl flex flex-col items-center text-center justify-center gap-3">
+                                                {file.type.startsWith('image/') ? (
+                                                    <img src={file.dataUrl} alt={file.name} className="max-w-full max-h-60 object-contain rounded-lg" />
+                                                ) : (
+                                                    <div className="p-4 bg-white/10 rounded-full">{fileIcon(file.type)}</div>
+                                                )}
+                                                <a href={file.dataUrl.startsWith('http') ? file.dataUrl : `${apiBaseUrl()}${file.dataUrl}`} download={file.name} className="text-sm font-bold truncate w-full hover:underline text-blue-400">Download {file.name}</a>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* RIGHT: Document Sidebar (≈25%) */}
+                    <div className="w-full sm:w-1/4 flex flex-col glass rounded-l-lg overflow-hidden shrink-0">
+                        <div className="flex border-b border-white/10 shrink-0">
+                            <button className="flex-1 py-4 text-xs font-bold border-b-2 transition-colors flex justify-center items-center gap-2 border-white text-white">
+                                <Bot className="w-4 h-4" /> PrimeArc AI
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto relative h-full">
+                            <div className="p-4 flex flex-col h-full absolute inset-0">
+                                <div className="flex-1 overflow-y-auto flex flex-col gap-4 mb-4 pr-2">
+                                    <div className="rounded-xl bg-gradient-to-r from-blue-900/40 to-purple-900/40 border border-white/10 p-4 shrink-0 shadow-lg">
+                                        <h3 className="text-white font-bold flex items-center gap-2 text-sm">
+                                            <Sparkles className="w-4 h-4 text-blue-400" />
+                                            Document AI
+                                        </h3>
+                                        <p className="text-gray-300 text-xs mt-2 leading-relaxed">
+                                            Ask me to summarize, explain key concepts, or generate study questions based on this Note.
+                                        </p>
+                                    </div>
+                                    {aiMessages.length > 0 && (
+                                        <div className="flex justify-end mb-2 pr-2">
+                                            <button 
+                                                onClick={() => setAiMessages([])}
+                                                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold"
+                                                title="Clear AI Conversation"
+                                            >
+                                                <Trash2 size={12} /> Clear Chat
+                                            </button>
+                                        </div>
+                                    )}
+                                    {aiMessages.map((msg, idx) => (
+                                        <div key={idx} className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-lg ${msg.role === 'user' ? 'bg-white text-black' : 'bg-gradient-to-br from-blue-500 to-purple-600 text-white'}`}>
+                                                {msg.role === 'user' ? <User size={14} /> : <Bot size={14} />}
+                                            </div>
+                                            <div className={`p-3 rounded-2xl max-w-[85%] text-sm leading-relaxed shadow-lg ${msg.role === 'user' ? 'bg-white text-black rounded-tr-sm' : 'bg-white/10 border border-white/10 text-white rounded-tl-sm'}`}>
+                                                {msg.role === 'user' ? (
+                                                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                                                ) : (
+                                                    <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-pre:bg-black/50 prose-pre:border prose-pre:border-white/10 prose-headings:font-bold prose-headings:text-white prose-a:text-blue-400">
+                                                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                            {msg.content}
+                                                        </ReactMarkdown>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {isAiLoading && (
+                                        <div className="flex gap-3">
+                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center shrink-0">
+                                                <Bot size={14} />
+                                            </div>
+                                            <div className="p-4 bg-white/5 border border-white/10 rounded-2xl rounded-tl-sm flex gap-1">
+                                                <div className="w-1.5 h-1.5 bg-white/50 rounded-full animate-bounce"></div>
+                                                <div className="w-1.5 h-1.5 bg-white/50 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
+                                                <div className="w-1.5 h-1.5 bg-white/50 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                <form onSubmit={handleAiSubmit} className="flex gap-2 shrink-0 pt-3 border-t border-white/10 mt-auto bg-black/20 backdrop-blur-md p-4 rounded-xl">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Ask PrimeArc AI..." 
+                                        value={aiPrompt}
+                                        onChange={e => setAiPrompt(e.target.value)}
+                                        className="flex-1 bg-white/5 border border-white/20 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-white focus:bg-white/10 transition-all font-medium"
+                                    />
+                                    <button 
+                                        type="submit" 
+                                        disabled={!aiPrompt.trim() || isAiLoading}
+                                        className="p-2.5 bg-white text-black rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed group"
+                                    >
+                                        <SendHorizontal className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+
     return (
         <div className="page-container" style={{ position: 'relative' }}>
             <div className="page-header">
@@ -311,56 +591,88 @@ export default function Notes() {
             </div>
 
             {showAddForm && (
-                <div className="glass-card add-form" style={{ marginBottom: '20px' }}>
-                    <input className="form-input" placeholder="Note title" value={newTitle} onChange={e => setNewTitle(e.target.value)} />
-                    <textarea className="form-textarea" placeholder="Write your note..." value={newContent} onChange={e => setNewContent(e.target.value)} rows={4} />
-                    
-                    <div className="file-upload-area" onClick={() => fileInputRef.current?.click()}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}><Paperclip size={14} /> Attach files</span>
-                        <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={handleFilePick} />
-                    </div>
-                    {pendingFiles.length > 0 && (
-                        <div style={{ marginTop: '10px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                            {pendingFiles.map((pf, idx) => (
-                                <span key={idx} style={{ padding: '5px 10px', background: '#333', borderRadius: '5px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                    {fileIcon(pf.type)} {pf.name} ({formatSize(pf.size)})
-                                    <button type="button" onClick={() => setPendingFiles(prev => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', marginLeft: '5px', display: 'inline-flex', alignItems: 'center' }}><X size={14} /></button>
-                                </span>
-                            ))}
-                        </div>
-                    )}
-
-                    {noteUploadProgress !== null && (
-                        <div style={{ marginTop: '15px', padding: '14px 16px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                <span style={{ color: '#fff', fontWeight: 700, fontSize: '0.95rem' }}>
-                                    {isSavingNote ? 'Uploading note to cloud...' : 'Upload complete'}
-                                </span>
-                                <span style={{ color: '#fff', fontWeight: 800, fontSize: '0.95rem' }}>{noteUploadProgress}%</span>
+                <div className="glass p-8 mb-10 border border-white/10 rounded-3xl animate-in fade-in slide-in-from-top-4 duration-300">
+                    <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+                        <span className="p-1.5 bg-white/10 rounded-lg text-lg inline-flex"><Upload className="w-4 h-4" /></span>
+                        Create Note
+                    </h2>
+                    <form onSubmit={handleUpload} className="flex flex-col gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="flex flex-col gap-2">
+                                <label className="text-xs uppercase tracking-widest font-bold text-gray-500 ml-1">Note Title</label>
+                                <input 
+                                    type="text" placeholder="e.g. Chapter 4 Key Concepts" required
+                                    value={title} onChange={e => setTitle(e.target.value)}
+                                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-white/30 focus:bg-white/[0.08] outline-none transition-all"
+                                />
+                                
+                                <label className="text-xs uppercase tracking-widest font-bold text-gray-500 ml-1 mt-4">Note Content (Optional)</label>
+                                <textarea 
+                                    placeholder="Write your textual notes here..." 
+                                    value={content} onChange={e => setContent(e.target.value)} rows={4}
+                                    className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-white/30 focus:bg-white/[0.08] outline-none transition-all resize-none"
+                                />
                             </div>
-                            <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '999px', overflow: 'hidden' }}>
-                                <div style={{ width: `${noteUploadProgress}%`, height: '100%', background: '#fff', transition: 'width 0.2s ease' }} />
+                            <div className="flex flex-col gap-2">
+                                <label className="text-xs uppercase tracking-widest font-bold text-gray-500 ml-1">Upload PDF Document</label>
+                                <div className="border-2 border-dashed border-white/10 rounded-2xl p-8 flex flex-col items-center justify-center text-center hover:bg-white/5 hover:border-white/30 transition-all cursor-pointer group relative bg-black/20 h-full min-h-[160px]">
+                                    <input 
+                                        type="file" accept="application/pdf"
+                                        onChange={handleFileChange}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                    />
+                                    <Upload className="w-10 h-10 text-gray-500 mb-4 group-hover:text-white transition-colors group-hover:scale-110 duration-300" />
+                                    <span className="text-sm font-bold text-gray-300 mb-2">Drag & drop your PDF here or click to browse</span>
+                                    <span className="text-xs text-gray-500">Attach a PDF alongside your notes for PrimeArc AI to analyze</span>
+                                </div>
+                                {simulatedFile && (
+                                    <div className="mt-2 text-sm text-green-400 font-bold bg-green-500/10 p-3 rounded-xl border border-green-500/20 flex justify-between items-center">
+                                        📄 {simulatedFile.name}
+                                        <button type="button" onClick={() => setSimulatedFile(null)} className="text-gray-400 hover:text-white"><X size={16} /></button>
+                                    </div>
+                                )}
                             </div>
                         </div>
-                    )}
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '15px', color: '#ccc' }}>
-                        {activeTab === 'my_notes' ? (
-                            <>
-                                <input type="checkbox" id="publicToggle" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} style={{ cursor: 'pointer', width: '20px', height: '20px' }} />
-                                <label htmlFor="publicToggle" style={{ cursor: 'pointer' }}>Share to {classLevel} Community</label>
-                            </>
-                        ) : (
-                            <span style={{ color: '#fff', fontSize: '0.9rem' }}>
-                                <span style={{ marginRight: '8px', display: 'inline-flex', verticalAlign: 'middle' }}><Check size={14} /></span> This note will be published publicly to {classLevel}.
-                            </span>
+                        {uploadProgress !== null && (
+                            <div className="mt-4 p-4 bg-white/5 rounded-2xl border border-white/10">
+                                <div className="flex justify-between items-center mb-3">
+                                    <span className="text-sm font-bold text-white flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                                        {isSavingNote ? 'Uploading properties and documents...' : 'Upload complete'}
+                                    </span>
+                                    <span className="text-sm font-bold text-gray-400">{uploadProgress}%</span>
+                                </div>
+                                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                                    <div className="h-full bg-white transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                                </div>
+                            </div>
                         )}
-                    </div>
 
-                    <div className="form-row" style={{ marginTop: '15px' }}>
-                        <div style={{ color: '#8c8c8c', fontSize: '0.9rem' }}>Notes are saved to the cloud.</div>
-                        <button className="btn-primary" onClick={addNote} disabled={isSavingNote}>{isSavingNote ? 'Uploading...' : `Save ${isPublic ? 'Public Note' : 'Note'}`}</button>
-                    </div>
+                        <div className="flex flex-col sm:flex-row items-center gap-4 mt-6 pt-6 border-t border-white/10">
+                            {activeTab === 'my_notes' ? (
+                                <label className="flex items-center gap-3 cursor-pointer group">
+                                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${isPublic ? 'bg-white border-white text-black' : 'border-white/30 text-transparent group-hover:border-white'}`}>
+                                        <Check size={14} className={isPublic ? 'opacity-100' : 'opacity-0'} />
+                                    </div>
+                                    <input type="checkbox" className="hidden" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
+                                    <span className="text-sm text-gray-300 group-hover:text-white transition-colors">Submit to {classLevel} shared community</span>
+                                </label>
+                            ) : (
+                                <span className="text-sm text-gray-300 flex items-center gap-2">
+                                    <Check size={16} className="text-white" /> Note will be published publicly.
+                                </span>
+                            )}
+                            
+                            <button 
+                                type="submit" 
+                                disabled={isSavingNote || (!content && !simulatedFile)}
+                                className={`ml-auto px-10 py-3.5 rounded-full font-bold transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(255,255,255,0.2)] disabled:opacity-50 disabled:hover:scale-100 ${isSavingNote ? 'bg-white/20 text-white cursor-not-allowed' : 'bg-white text-black'}`}
+                            >
+                                {isSavingNote ? 'Uploading...' : 'Save Note'}
+                            </button>
+                        </div>
+                    </form>
                 </div>
             )}
 
@@ -396,11 +708,11 @@ export default function Notes() {
 
             <div className="notes-grid">
                 {filtered.map(note => (
-                    <div key={note.id} className="note-card" style={{ background: '#111111', borderColor: '#2b2b2b' }}>
+                    <div key={note.id} className="note-card cursor-pointer hover:bg-white/[0.05] transition-colors" style={{ background: '#111111', borderColor: '#2b2b2b' }} onClick={() => setActiveNoteId(note.id)}>
                         <div className="note-card-header">
                             <h3 style={{ margin: 0 }}>{note.title}</h3>
                             {activeTab === 'my_notes' && (
-                                <button className="icon-btn-ghost" onClick={() => deleteMyNote(note.id)}><X size={16} /></button>
+                                <button className="icon-btn-ghost text-red-400 hover:text-red-300 hover:bg-red-500/10" onClick={(e) => { e.stopPropagation(); deleteMyNote(note.id); }}><X size={16} /></button>
                             )}
                         </div>
                         {activeTab === 'community' && <small style={{ color: '#888', display: 'block', marginBottom: '10px' }}>Shared by {note.author}</small>}
@@ -414,7 +726,7 @@ export default function Notes() {
                                 {note.files.map((file, idx) => (
                                     <a 
                                         key={idx} 
-                                        href={file.dataUrl} 
+                                        href={file.dataUrl.startsWith('http') ? file.dataUrl : `${apiBaseUrl()}${file.dataUrl}`} 
                                         download={file.type === 'application/pdf' ? undefined : file.name}
                                         target={file.type === 'application/pdf' ? "_blank" : undefined}
                                         rel="noopener noreferrer"
@@ -430,7 +742,7 @@ export default function Notes() {
                         
                         <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px solid #333', textAlign: 'center' }}>
                             <button 
-                                onClick={() => generateFlashcards(note.content)}
+                                onClick={(e) => { e.stopPropagation(); generateFlashcards(note.content); }}
                                 disabled={loadingFlashcards}
                                 style={{ backgroundColor: '#fff', color: '#000', border: '1px solid #ccc', padding: '8px 15px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold', width: '100%' }}
                             >

@@ -1,5 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useUser } from '../context/UserContext';
+
+interface Reply {
+    _id?: string;
+    user: string;
+    text: string;
+    createdAt?: string;
+}
 
 interface Comment {
     _id?: string;
@@ -7,6 +16,7 @@ interface Comment {
     text: string;
     page?: number;
     createdAt?: string;
+    replies?: Reply[];
 }
 
 interface ContentItem {
@@ -120,6 +130,8 @@ export default function Content() {
     
     const [commentText, setCommentText] = useState('');
     const [commentPage, setCommentPage] = useState('');
+    const [replyText, setReplyText] = useState('');
+    const [showReplyId, setShowReplyId] = useState<string | null>(null);
     const viewerPageRef = useRef<HTMLDivElement | null>(null);
 
     const jumpToPage = (targetPage?: number) => {
@@ -407,24 +419,51 @@ export default function Content() {
                     doc.comments.push({ user: username, text: commentText, page: pageNum, createdAt: new Date().toISOString() }); 
                 }
                 localStorage.setItem(`primearc_local_content_${classLevel}`, JSON.stringify(localDocs));
+                setContents(prev => prev.map(c => c._id === id ? doc : c));
+                setCommentText('');
+                setCommentPage('');
             }
-            setCommentText('');
-            setCommentPage(String(pageNumber));
-            fetchContent();
             return;
         }
 
         try {
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-            await fetch(`${baseUrl}/api/content/${id}/comment`, {
+            const baseUrl = apiBaseUrl();
+            const res = await fetch(`${baseUrl}/api/content/${id}/comment`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user: username, text: commentText, page: pageNum })
             });
-            setCommentText('');
-            setCommentPage(String(pageNumber));
-            fetchContent();
+            if (res.ok) {
+                const updated = await res.json();
+                setContents(prev => prev.map(c => c._id === id ? updated : c));
+                setCommentText('');
+                setCommentPage('');
+            }
         } catch (err) { console.error(err); }
+    };
+
+    const handleReplySubmit = async (e: React.FormEvent, commentId: string, docId: string) => {
+        e.preventDefault();
+        if (!replyText.trim() || !username) return;
+        try {
+            const baseUrl = apiBaseUrl();
+            const res = await fetch(`${baseUrl}/api/content/${docId}/comment/${commentId}/reply`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user: username, text: replyText })
+            });
+            if (res.ok) {
+                const updated = await res.json();
+                setContents(prev => prev.map(c => c._id === docId ? updated : c));
+                setReplyText('');
+                setShowReplyId(null);
+            }
+        } catch (err) { console.error(err); }
+    };
+
+    const handleClearAiChat = () => {
+        setAiMessages([]);
+        localStorage.removeItem(aiChatStorageKey);
     };
 
     const handleAiSubmit = async (e: React.FormEvent) => {
@@ -803,8 +842,8 @@ export default function Content() {
                                         </div>
                                     ) : (
                                         activeViewerItem.comments.map((c, i) => (
-                                            <div key={i} className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/[0.08] transition-all group">
-                                                <div className="flex items-center gap-2 mb-3">
+                                            <div key={c._id || i} className="bg-white/5 border border-white/10 rounded-xl p-4 hover:bg-white/[0.08] transition-all group flex flex-col gap-3">
+                                                <div className="flex items-center gap-2">
                                                     <div className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center text-sm font-bold shadow-lg shadow-white/10 shrink-0">
                                                         {c.user.charAt(0).toUpperCase()}
                                                     </div>
@@ -824,6 +863,43 @@ export default function Content() {
                                                     )}
                                                 </div>
                                                 <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-wrap pl-10 border-l border-white/5 group-hover:border-white/20 transition-colors">{c.text}</p>
+                                                
+                                                {(c.replies && c.replies.length > 0) && (
+                                                    <div className="ml-10 flex flex-col gap-3 mt-2">
+                                                        {c.replies.map((r: any, rIdx: number) => (
+                                                            <div key={r._id || rIdx} className="bg-black/30 p-3 rounded-lg border border-white/5">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <div className="w-5 h-5 rounded-full bg-gray-500 text-white flex items-center justify-center text-[10px] font-bold">
+                                                                        {r.user.charAt(0).toUpperCase()}
+                                                                    </div>
+                                                                    <span className="font-bold text-xs text-gray-300">{r.user}</span>
+                                                                </div>
+                                                                <p className="text-gray-400 text-xs pl-7 whitespace-pre-wrap">{r.text}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                <div className="ml-10 mt-1">
+                                                    {showReplyId === c._id ? (
+                                                        <form onSubmit={(e) => handleReplySubmit(e, c._id!, activeViewerItem._id)} className="flex gap-2">
+                                                            <input 
+                                                                type="text" autoFocus placeholder="Write a reply..." required
+                                                                value={replyText} onChange={e => setReplyText(e.target.value)}
+                                                                className="flex-1 bg-black/50 border border-white/20 rounded-md px-3 py-1.5 text-xs text-white outline-none focus:border-white transition-all"
+                                                            />
+                                                            <button type="submit" className="px-3 py-1.5 bg-white text-black text-xs font-bold rounded-md hover:bg-gray-200 transition-colors">Reply</button>
+                                                            <button type="button" onClick={() => {setShowReplyId(null); setReplyText('');}} className="px-2 py-1.5 text-gray-400 hover:text-white text-xs">Cancel</button>
+                                                        </form>
+                                                    ) : (
+                                                        <button 
+                                                            onClick={() => { setShowReplyId(c._id || null); setReplyText(''); }} 
+                                                            className="text-xs text-gray-400 font-bold hover:text-white transition-colors flex items-center gap-1"
+                                                        >
+                                                            <MessageSquare size={12} /> Reply
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                         ))
                                     )}
@@ -851,11 +927,21 @@ export default function Content() {
                         {viewerTab === 'ai' && (
                             <div className="p-4 flex flex-col h-full absolute inset-0">
                                 <div className="flex-1 overflow-y-auto flex flex-col gap-4 mb-4 pr-2">
-                                    {aiMessages.length === 0 && (
-                                        <div className="text-center mt-10">
+                                    <div className="flex items-center justify-between mb-4 pr-2">
+                                        <div className="text-center mt-10 w-full">
                                             <div className="text-3xl mb-3 flex justify-center"><Bot size={28} /></div>
-                                            <p className="text-white font-bold mb-1">AI Assistant</p>
+                                            <p className="text-white font-bold mb-1">PrimeArc AI</p>
                                             <p className="text-sm text-gray-400">Ask me to summarize this document, explain concepts, or extract key notes.</p>
+                                        </div>
+                                    </div>
+                                    {aiMessages.length > 0 && (
+                                        <div className="flex justify-end mb-2 pr-2">
+                                            <button 
+                                                onClick={handleClearAiChat}
+                                                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2 text-xs font-bold"
+                                            >
+                                                <Trash2 size={12} /> Clear Chat
+                                            </button>
                                         </div>
                                     )}
                                     {aiMessages.map((msg, idx) => (
@@ -867,7 +953,15 @@ export default function Content() {
                                             <div className="flex items-center gap-2 mb-1 opacity-50 text-[10px] uppercase font-bold tracking-widest">
                                                 {msg.role === 'user' ? 'You' : 'PrimeArc AI'}
                                             </div>
-                                            {msg.content}
+                                            {msg.role === 'user' ? (
+                                                <div className="whitespace-pre-wrap">{msg.content}</div>
+                                            ) : (
+                                                <div className="prose prose-invert prose-sm max-w-none prose-p:leading-relaxed prose-pre:bg-black/50 prose-pre:border prose-pre:border-white/10 prose-headings:font-bold prose-headings:text-white prose-a:text-blue-400">
+                                                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                                        {msg.content}
+                                                    </ReactMarkdown>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                     {isAiLoading && (

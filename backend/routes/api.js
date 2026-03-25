@@ -4,6 +4,7 @@ import Question from '../models/Question.js';
 import Task from '../models/Task.js';
 import Note from '../models/Note.js';
 import Quiz from '../models/Quiz.js';
+import FlashcardSet from '../models/FlashcardSet.js';
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import yts from 'yt-search';
 import dotenv from 'dotenv';
@@ -27,6 +28,21 @@ const contentPdfStorage = multer.diskStorage({
 });
 const uploadContentPdf = multer({
     storage: contentPdfStorage,
+    limits: { fileSize: 35 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const ok = file.mimetype === 'application/pdf' || /\.pdf$/i.test(file.originalname || '');
+        cb(ok ? null : new Error('Only PDF files are allowed'), ok);
+    },
+});
+
+const NOTES_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'notes');
+fs.mkdirSync(NOTES_UPLOAD_DIR, { recursive: true });
+const notePdfStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, NOTES_UPLOAD_DIR),
+    filename: (_req, _file, cb) => cb(null, `${randomBytes(16).toString('hex')}.pdf`),
+});
+const uploadNotePdf = multer({
+    storage: notePdfStorage,
     limits: { fileSize: 35 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
         const ok = file.mimetype === 'application/pdf' || /\.pdf$/i.test(file.originalname || '');
@@ -218,6 +234,25 @@ router.post('/content/:id/comment', async (req, res) => {
         res.json(content);
     } catch (err) {
         res.status(500).json({ error: 'Failed to comment' });
+    }
+});
+
+// Reply to a Comment
+router.post('/content/:id/comment/:commentId/reply', async (req, res) => {
+    try {
+        const { user, text } = req.body;
+        const content = await ClassContent.findById(req.params.id);
+        if (!content) return res.status(404).json({ error: 'Content not found' });
+        
+        const comment = content.comments.id(req.params.commentId);
+        if (!comment) return res.status(404).json({ error: 'Comment not found' });
+        
+        comment.replies.push({ user, text });
+        await content.save();
+        res.json(content);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to reply' });
     }
 });
 
@@ -419,7 +454,10 @@ router.get('/notes', async (req, res) => {
         const { isPublic, classLevel, author } = req.query;
         const filter = {};
         if (isPublic !== undefined) filter.isPublic = isPublic === 'true';
-        if (classLevel) filter.classLevel = Number(classLevel);
+        if (classLevel) {
+            const normalized = normalizeClassLevelValue(classLevel);
+            filter.classLevel = { $in: [normalized, String(normalized)] };
+        }
         if (author) filter.author = author;
         
         const notes = await Note.find(filter).sort({ createdAt: -1 });
@@ -431,12 +469,58 @@ router.get('/notes', async (req, res) => {
 
 router.post('/notes', async (req, res) => {
     try {
-        const note = new Note(req.body);
+        const payload = { ...req.body };
+        if (payload.classLevel !== undefined) {
+            payload.classLevel = normalizeClassLevelValue(payload.classLevel);
+        }
+        const note = new Note(payload);
         await note.save();
         res.status(201).json(note);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
+});
+
+router.post('/notes/upload', uploadNotePdf.single('file'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'PDF file required' });
+        const { title, content, author, classLevel, isPublic } = req.body;
+        
+        const link = `/api/notes-files/${req.file.filename}`;
+        
+        const note = new Note({
+            title: title || 'Untitled Note',
+            content: content || '',
+            author: author || 'Student',
+            classLevel: normalizeClassLevelValue(classLevel),
+            isPublic: isPublic === 'true',
+            files: [{
+                name: req.file.originalname,
+                type: 'application/pdf',
+                size: req.file.size,
+                dataUrl: link
+            }]
+        });
+        
+        await note.save();
+        res.status(201).json(note);
+    } catch (err) {
+        console.error('notes/upload:', err.message);
+        if (req.file?.path) fs.unlink(req.file.path, () => {});
+        res.status(500).json({ error: 'Failed to save uploaded note', details: err.message });
+    }
+});
+
+router.get('/notes-files/:name', (req, res) => {
+    const name = req.params.name;
+    if (!/^[a-f0-9]{32}\.pdf$/i.test(name)) {
+        return res.status(400).send('Invalid file');
+    }
+    const filePath = path.join(NOTES_UPLOAD_DIR, name);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
+    res.sendFile(path.resolve(filePath), (err) => {
+        if (err && !res.headersSent) res.status(404).send('Not found');
+    });
 });
 
 router.put('/notes/:id', async (req, res) => {
@@ -513,7 +597,7 @@ router.post('/generate-quiz', async (req, res) => {
         }
 
         const prompt = `Generate a JSON array of ${nQ} multiple choice questions strictly based on the provided study material or attached PDF document.
-        Topic: ${topic}
+        Here is the Custom Instructions to generate the question: ${topic}
         Document title: ${documentTitle || 'Unknown'}
         Difficulty: ${diff}
         Target Page Number: ${pageNumber || 'Unknown'} (Focus strongly on this page if a full document is provided)
@@ -571,19 +655,96 @@ router.post('/generate-quiz', async (req, res) => {
 
 router.post('/generate-flashcards', async (req, res) => {
     try {
-        const { noteContent } = req.body;
-        if (!noteContent) return res.status(400).json({ error: "noteContent is required" });
+        const { noteContent, topic, text, imageBase64, numCards, contentId, documentTitle, pageNumber, pageText } = req.body;
+        const nN = numCards || 10;
+        
+        let storedDocumentText = '';
+        let pdfBase64Data = null;
+        
+        if (contentId && !contentId.toString().startsWith('local_')) {
+            try {
+                const content = await ClassContent.findById(contentId).lean();
+                if (content?.link) {
+                    const pdfUrl = content.link.startsWith('http') ? content.link : `http://localhost:${process.env.PORT || 5000}${content.link}`;
+                    try {
+                        const pdfResp = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
+                        pdfBase64Data = Buffer.from(pdfResp.data).toString('base64');
+                    } catch (fetchErr) {
+                        console.error("Failed to fetch PDF for flashcards:", fetchErr.message);
+                    }
+                }
+                if (content?.extractedText?.length) {
+                    storedDocumentText = content.extractedText
+                        .map((entry) => {
+                            const normalized = `${entry?.content || ''}`.replace(/\s+/g, ' ').trim();
+                            return normalized ? `[Page ${entry.page}] ${normalized}` : '';
+                        })
+                        .filter(Boolean)
+                        .join('\n\n');
+                }
+            } catch (dbErr) {
+                console.error("Skipping DB fetch for flashcards:", dbErr.message);
+            }
+        }
 
-        const prompt = `Convert the following notes into a JSON array of 5 to 10 flashcards for studying. Focus on key concepts and definitions.
-        Notes: ${noteContent}
-        Return ONLY valid JSON in this exact format, with NO markdown code blocks, just raw JSON: 
+        const normalizedPageText = `${pageText || ''}`.replace(/\s+/g, ' ').trim();
+        const combinedContext = [noteContent, text, storedDocumentText]
+            .map((part) => `${part || ''}`.trim())
+            .filter(Boolean)
+            .join('\n\n')
+            .slice(0, 30000);
+
+        if (!combinedContext && !imageBase64 && !pdfBase64Data) {
+            return res.status(400).json({ error: 'Document material is required to generate flashcards.' });
+        }
+
+        const prompt = `Generate a JSON array of ${nN} study flashcards strictly based on the provided study material or attached document.
+        Topic/Focus: ${topic || 'General Overview'}
+        Document title: ${documentTitle || 'Unknown'}
+        
+        Instructions:
+        1. Extract the most important concepts, definitions, formulas, or facts.
+        2. Format each as a front/back flashcard pair.
+        3. Keep the 'front' concise (the term or question) and the 'back' clear and factual based strictly on the text.
+        
+        TEXT CONTEXT:
+        ${combinedContext || 'No additional text provided.'}
+
+        Return ONLY valid JSON in this exact format, without markdown formatting blocks:
         [{"front": "Concept or term", "back": "Definition or explanation"}]`;
 
-        const response = await geminiModel.invoke(prompt);
-        let resultText = response.content.replace(/```json/g, '').replace(/```/g, '').trim();
+        let response;
+        if (pdfBase64Data) {
+            const msgContent = [
+                { type: "text", text: prompt },
+                { type: "media", mimeType: "application/pdf", data: pdfBase64Data }
+            ];
+            response = await geminiModel.invoke([ ["human", msgContent] ]);
+        } else if (imageBase64) {
+            const msgContent = [
+                { type: "text", text: prompt },
+                { type: "image_url", image_url: imageBase64 }
+            ];
+            response = await geminiModel.invoke([ ["human", msgContent] ]);
+        } else {
+            response = await geminiModel.invoke(prompt);
+        }
+
+        let contentStr = typeof response.content === 'string' 
+            ? response.content 
+            : (Array.isArray(response.content) ? response.content.map(c => c.text || JSON.stringify(c)).join(' ') : JSON.stringify(response.content));
+
+        let resultText = contentStr.replace(/```[jJ][sS][oO][nN]/g, '').replace(/```/g, '').trim();
+        const startIdx = resultText.indexOf('[');
+        const endIdx = resultText.lastIndexOf(']');
+        if (startIdx !== -1 && endIdx !== -1 && endIdx >= startIdx) {
+            resultText = resultText.substring(startIdx, endIdx + 1);
+        }
+        
         const flashcards = JSON.parse(resultText);
         res.json(flashcards);
     } catch (err) {
+        console.error("Flashcards gen error:", err);
         res.status(500).json({ error: "Failed to generate flashcards: " + err.message });
     }
 });
@@ -704,6 +865,25 @@ router.post('/quizzes', async (req, res) => {
         const quiz = new Quiz(req.body);
         await quiz.save();
         res.status(201).json(quiz);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/flashcard-sets', async (req, res) => {
+    try {
+        const { user, documentId } = req.query;
+        let filter = {};
+        if (user) filter.user = user;
+        if (documentId) filter.documentId = documentId;
+        const sets = await FlashcardSet.find(filter).sort({ createdAt: -1 });
+        res.json(sets);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/flashcard-sets', async (req, res) => {
+    try {
+        const set = new FlashcardSet(req.body);
+        await set.save();
+        res.status(201).json(set);
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
