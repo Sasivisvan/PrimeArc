@@ -36,7 +36,7 @@ const uploadContentPdf = multer({
 
 const geminiModel = new ChatGoogleGenerativeAI({
     apiKey: process.env.GEMINI_API_KEY,
-    model: "gemini-flash-latest",
+    model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
     maxOutputTokens: 2048,
 });
 
@@ -472,16 +472,32 @@ router.post('/generate-quiz', async (req, res) => {
         const diff = difficulty || 'medium';
 
         let storedDocumentText = '';
-        if (contentId) {
-            const content = await ClassContent.findById(contentId).lean();
-            if (content?.extractedText?.length) {
-                storedDocumentText = content.extractedText
-                    .map((entry) => {
-                        const normalized = `${entry?.content || ''}`.replace(/\s+/g, ' ').trim();
-                        return normalized ? `[Page ${entry.page}] ${normalized}` : '';
-                    })
-                    .filter(Boolean)
-                    .join('\n\n');
+        let pdfBase64Data = null;
+        if (contentId && !contentId.toString().startsWith('local_')) {
+            try {
+                const content = await ClassContent.findById(contentId).lean();
+                if (content?.link) {
+                    // Fetch the actual PDF to send natively to Gemini
+                    const pdfUrl = content.link.startsWith('http') ? content.link : `http://localhost:${process.env.PORT || 5000}${content.link}`;
+                    try {
+                        const pdfResp = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
+                        pdfBase64Data = Buffer.from(pdfResp.data).toString('base64');
+                    } catch (fetchErr) {
+                        console.error("Failed to fetch PDF for Gemini:", fetchErr.message);
+                    }
+                }
+                
+                if (content?.extractedText?.length) {
+                    storedDocumentText = content.extractedText
+                        .map((entry) => {
+                            const normalized = `${entry?.content || ''}`.replace(/\s+/g, ' ').trim();
+                            return normalized ? `[Page ${entry.page}] ${normalized}` : '';
+                        })
+                        .filter(Boolean)
+                        .join('\n\n');
+                }
+            } catch (dbErr) {
+                console.error("Skipping DB fetch for quiz generation:", dbErr.message);
             }
         }
 
@@ -492,46 +508,64 @@ router.post('/generate-quiz', async (req, res) => {
             .join('\n\n')
             .slice(0, 30000);
 
-        if (!combinedContext && !imageBase64) {
+        if (!combinedContext && !imageBase64 && !pdfBase64Data) {
             return res.status(400).json({ error: 'Document material is required to generate a grounded quiz.' });
         }
 
-        const prompt = `Generate a JSON array of ${nQ} multiple choice questions based strictly on the supplied study material.
+        const prompt = `Generate a JSON array of ${nQ} multiple choice questions strictly based on the provided study material or attached PDF document.
         Topic: ${topic}
         Document title: ${documentTitle || 'Unknown'}
         Difficulty: ${diff}
-        Current page number: ${pageNumber || 'Unknown'}
-        Current page text: ${normalizedPageText || 'Not provided'}
+        Target Page Number: ${pageNumber || 'Unknown'} (Focus strongly on this page if a full document is provided)
+        Page text snippet: ${normalizedPageText || 'Not provided'}
 
-        Use the provided document material as the primary and preferred source.
-        Do not fall back to unrelated general-knowledge questions when the material is available.
-        If the material is too thin for ${nQ} strong questions, generate fewer questions, but every question must stay grounded in the material.
-        Ensure each answer is supported by the supplied document context.
+        Instructions:
+        1. Base your questions exclusively on the informational content in the provided document, images, or text context.
+        2. Do not include unrelated general-knowledge questions.
+        3. Ensure every answer is factually supported by the current material.
+        4. If the material is too short for ${nQ} questions, simply return fewer valid questions.
 
-        DOCUMENT MATERIAL:
-        ${combinedContext || 'No text provided. Use only the informational content visible in the supplied image.'}
+        TEXT CONTEXT (if any):
+        ${combinedContext || 'No additional text provided.'}
 
-        Return ONLY valid JSON in this exact format, with NO markdown code blocks, just raw JSON:
-        [{"question": "Q text", "options": ["A", "B", "C", "D"], "answer": "Correct Option Text", "explanation": "A one-sentence explanation of why it's correct"}]`;
+        Return ONLY valid JSON in this exact format, with NO markdown formatting around the output:
+        [{"question": "Q text", "options": ["A", "B", "C", "D"], "answer": "Correct Option Text", "explanation": "A concise explanation of why it's correct based on the text."}]`;
 
-        // Support string or tuple array formats for Langchain
+        // Send to Gemini using natively supported media types or image URLs
         let response;
-        if (imageBase64) {
-             const msgContent = [
-                 { type: "text", text: prompt },
-                 { type: "image_url", image_url: imageBase64 }
-             ];
-             response = await geminiModel.invoke([ ["human", msgContent] ]);
+        if (pdfBase64Data) {
+            // Using the native PDF support inside Gemini 1.5/2.5 for incredibly accurate OCR and context!
+            const msgContent = [
+                { type: "text", text: prompt },
+                { type: "media", mimeType: "application/pdf", data: pdfBase64Data }
+            ];
+            response = await geminiModel.invoke([ ["human", msgContent] ]);
+        } else if (imageBase64) {
+            const msgContent = [
+                { type: "text", text: prompt },
+                { type: "image_url", image_url: imageBase64 }
+            ];
+            response = await geminiModel.invoke([ ["human", msgContent] ]);
         } else {
-             response = await geminiModel.invoke(prompt);
+            response = await geminiModel.invoke(prompt);
         }
 
-        let resultText = response.content.replace(/```json/g, '').replace(/```/g, '').trim();
+        let contentStr = typeof response.content === 'string' 
+            ? response.content 
+            : (Array.isArray(response.content) ? response.content.map(c => c.text || JSON.stringify(c)).join(' ') : JSON.stringify(response.content));
+
+        let resultText = contentStr.replace(/```[jJ][sS][oO][nN]/g, '').replace(/```/g, '').trim();
+        const startIdx = resultText.indexOf('[');
+        const endIdx = resultText.lastIndexOf(']');
+        if (startIdx !== -1 && endIdx !== -1 && endIdx >= startIdx) {
+            resultText = resultText.substring(startIdx, endIdx + 1);
+        }
         const quiz = JSON.parse(resultText);
         res.json(quiz);
     } catch (err) {
         console.error("Quiz gen error:", err);
-        res.status(500).json({ error: "Failed to generate quiz: " + err.message });
+        require('fs').writeFileSync('/tmp/quiz_err.log', (err.stack || err.message) + '\n');
+        res.status(500).json({ error: "Failed to generate quiz: " + err.message, details: err.stack });
     }
 });
 
@@ -560,10 +594,14 @@ router.post('/airesponse', async (req, res) => {
         if (!prompt) return res.status(400).json({ error: "Prompt is required" });
 
         let context = "";
-        if (contentId) {
-            const content = await ClassContent.findById(contentId);
-            if (content && content.extractedText && content.extractedText.length > 0) {
-                context = content.extractedText.map(t => `[Page ${t.page}]: ${t.content}`).join("\n\n");
+        if (contentId && !contentId.toString().startsWith('local_')) {
+            try {
+                const content = await ClassContent.findById(contentId);
+                if (content && content.extractedText && content.extractedText.length > 0) {
+                    context = content.extractedText.map(t => `[Page ${t.page}]: ${t.content}`).join("\n\n");
+                }
+            } catch (dbErr) {
+                console.error("Skipping DB fetch for AI response:", dbErr.message);
             }
         }
 

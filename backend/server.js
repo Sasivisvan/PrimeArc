@@ -39,7 +39,7 @@ app.use("/api", apiRoutes);
 
 // Basic Route
 app.get("/", (req, res) => {
-    res.json({ status: "Backend is running!", models: ["gemini-flash-latest", "ollama/qwen2.5:7b"] });
+    res.json({ status: "Backend is running!", models: [process.env.GEMINI_MODEL || "gemini-2.5-flash", "ollama/qwen2.5:7b"] });
 });
 
 app.post("/airesponse", async(req, res) => {
@@ -94,7 +94,7 @@ const keepAlive = setInterval(() => {}, 1000 * 60 * 60);
 // Initialize Gemini model once (not per-request)
 const geminiModel = new ChatGoogleGenerativeAI({
     apiKey: process.env.GEMINI_API_KEY,
-    model: "gemini-flash-latest",
+    model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
     maxOutputTokens: 2048,
 });
 
@@ -345,6 +345,6 @@ app.put("/chat-state", async (req, res) => {
 // Start server
 app.listen(PORT, () => {
     console.log(`\n✅ PrimeArc Backend running on http://localhost:${PORT}`);
-    console.log("   Model: gemini-flash-latest");
+    console.log(`   Model: ${process.env.GEMINI_MODEL || "gemini-2.5-flash"}`);
     console.log("   Press Ctrl+C to stop\n");
 });

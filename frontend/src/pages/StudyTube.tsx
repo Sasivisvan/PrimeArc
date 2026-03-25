@@ -48,8 +48,8 @@ export default function StudyTube() {
             return;
         }
 
-        // Prefix with class level and append strict negative logic to force YT's hand natively
-        fetchVideos(`${classLevel} ${searchQuery} educational lecture tutorial -game -prank -funny -movie -song -skit -minecraft -gta`);
+        // Prefix with class level and append general educational context
+        fetchVideos(`${classLevel} ${searchQuery} educational`);
     };
 
     return (
@@ -103,7 +103,7 @@ export default function StudyTube() {
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><Search size={18} /> Searching YouTube...</span>
                 </div>
             ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '25px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '25px' }}>
                     {videos.map(video => (
                         <div 
                             key={video.id} 

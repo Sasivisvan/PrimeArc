@@ -581,6 +581,7 @@ export default function Content() {
                     pageNumber,
                     pageText: currentPageText,
                     text: sourceText,
+                    imageBase64: currentPageImage,
                     difficulty: quizDifficulty,
                     numQuestions: quizCount
                 })
@@ -603,7 +604,8 @@ export default function Content() {
                     fetchDocQuizzes(activeViewerId);
                 }
             } else {
-                alert("Failed to generate valid questions. Try again.");
+                console.error("Backend response:", generatedQs);
+                alert(`Failed to generate valid questions.\nError: ${generatedQs.error || "Invalid response format"}\nTry again.`);
             }
         } catch(er) {
             console.error(er);
