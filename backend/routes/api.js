@@ -20,8 +20,15 @@ dotenv.config();
 
 const router = express.Router();
 
-const CONTENT_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'content');
-fs.mkdirSync(CONTENT_UPLOAD_DIR, { recursive: true });
+// Use /tmp on Vercel (read-only filesystem) or local uploads dir for dev
+const CONTENT_UPLOAD_DIR = process.env.VERCEL
+    ? path.join('/tmp', 'uploads', 'content')
+    : path.join(process.cwd(), 'uploads', 'content');
+try {
+    fs.mkdirSync(CONTENT_UPLOAD_DIR, { recursive: true });
+} catch (e) {
+    console.warn('Could not create upload dir (expected on Vercel):', e.message);
+}
 const uploadContentPdf = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 35 * 1024 * 1024 },
@@ -31,11 +38,18 @@ const uploadContentPdf = multer({
     },
 });
 
-const geminiModel = new ChatGoogleGenerativeAI({
-    apiKey: process.env.GEMINI_API_KEY,
-    model: "gemini-flash-latest",
-    maxOutputTokens: 2048,
-});
+// Lazy-init so the function doesn't crash if the key is momentarily missing
+let _geminiModel = null;
+function getGeminiModel() {
+    if (!_geminiModel) {
+        _geminiModel = new ChatGoogleGenerativeAI({
+            apiKey: process.env.GEMINI_API_KEY,
+            model: "gemini-flash-latest",
+            maxOutputTokens: 2048,
+        });
+    }
+    return _geminiModel;
+}
 
 function normalizeClassLevelValue(classLevel) {
     if (classLevel === undefined || classLevel === null || classLevel === '') return undefined;
@@ -574,9 +588,9 @@ router.post('/generate-quiz', async (req, res) => {
                  { type: "text", text: prompt },
                  { type: "image_url", image_url: imageBase64 }
              ];
-             response = await geminiModel.invoke([ ["human", msgContent] ]);
+             response = await getGeminiModel().invoke([ ["human", msgContent] ]);
         } else {
-             response = await geminiModel.invoke(prompt);
+             response = await getGeminiModel().invoke(prompt);
         }
 
         let resultText = response.content.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -598,7 +612,7 @@ router.post('/generate-flashcards', async (req, res) => {
         Return ONLY valid JSON in this exact format, with NO markdown code blocks, just raw JSON: 
         [{"front": "Concept or term", "back": "Definition or explanation"}]`;
 
-        const response = await geminiModel.invoke(prompt);
+        const response = await getGeminiModel().invoke(prompt);
         let resultText = response.content.replace(/```json/g, '').replace(/```/g, '').trim();
         const flashcards = JSON.parse(resultText);
         res.json(flashcards);
@@ -654,13 +668,13 @@ router.post('/airesponse', async (req, res) => {
                     image_url: imageBase64
                 }
             ];
-            response = await geminiModel.invoke([
+            response = await getGeminiModel().invoke([
                 ['system', systemInstruction],
                 ...formattedHistory,
                 ['human', humanContent]
             ]);
         } else {
-            response = await geminiModel.invoke([
+            response = await getGeminiModel().invoke([
                 ['system', systemInstruction],
                 ...formattedHistory,
                 ['human', prompt]

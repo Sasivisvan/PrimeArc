@@ -82,12 +82,18 @@ export const connectDB = async () => {
 };
 connectDB();
 
-// Initialize Gemini model once (not per-request)
-const geminiModel = new ChatGoogleGenerativeAI({
-    apiKey: process.env.GEMINI_API_KEY,
-    model: "gemini-flash-latest",
-    maxOutputTokens: 2048,
-});
+// Initialize Gemini model lazily (not per-file load)
+let _geminiModel = null;
+function getGeminiModel() {
+    if (!_geminiModel) {
+        _geminiModel = new ChatGoogleGenerativeAI({
+            apiKey: process.env.GEMINI_API_KEY,
+            model: "gemini-flash-latest",
+            maxOutputTokens: 2048,
+        });
+    }
+    return _geminiModel;
+}
 
 function normalizeClassLevelValue(classLevel) {
     if (classLevel === undefined || classLevel === null || classLevel === '') return undefined;
@@ -158,7 +164,7 @@ If task information is missing from the provided task list, say so plainly inste
 
 ${taskContext}` : ''}`;
 
-        const response = await geminiModel.invoke([
+        const response = await getGeminiModel().invoke([
             ["system", systemPrompt],
             ...formattedHistory,
             ["human", message]
