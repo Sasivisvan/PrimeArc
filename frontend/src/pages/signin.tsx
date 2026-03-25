@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, ArrowRight } from 'lucide-react';
+import { apiUrl } from '../lib/api';
 
 const SigninPage = () => {
   const navigate = useNavigate();
@@ -26,7 +27,7 @@ const SigninPage = () => {
         try {
             // 3. The POST Request
             // 'await' pauses code here until the server replies
-            const response = await fetch("http://localhost:5000/api/signin", {
+            const response = await fetch(apiUrl("/api/signin"), {
             method: "POST",
             headers: {
                 "Content-Type": "application/json", // Tells server we are sending JSON

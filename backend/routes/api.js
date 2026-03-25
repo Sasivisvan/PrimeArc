@@ -11,7 +11,8 @@ import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
-import { randomBytes } from 'crypto';
+import mongoose from 'mongoose';
+import { Readable } from 'stream';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pdf = require('pdf-parse');
@@ -21,12 +22,8 @@ const router = express.Router();
 
 const CONTENT_UPLOAD_DIR = path.join(process.cwd(), 'uploads', 'content');
 fs.mkdirSync(CONTENT_UPLOAD_DIR, { recursive: true });
-const contentPdfStorage = multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, CONTENT_UPLOAD_DIR),
-    filename: (_req, _file, cb) => cb(null, `${randomBytes(16).toString('hex')}.pdf`),
-});
 const uploadContentPdf = multer({
-    storage: contentPdfStorage,
+    storage: multer.memoryStorage(),
     limits: { fileSize: 35 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
         const ok = file.mimetype === 'application/pdf' || /\.pdf$/i.test(file.originalname || '');
@@ -47,9 +44,18 @@ function normalizeClassLevelValue(classLevel) {
 }
 
 function canonicalContentFilePath(linkOrName) {
-    const match = `${linkOrName || ''}`.match(/\/api\/content-files\/([a-f0-9]{32}\.pdf)/i)
-        || `${linkOrName || ''}`.match(/^([a-f0-9]{32}\.pdf)$/i);
+    const match = `${linkOrName || ''}`.match(/\/api\/content-files\/([a-f0-9]{24}|[a-f0-9]{32}\.pdf)/i)
+        || `${linkOrName || ''}`.match(/^([a-f0-9]{24}|[a-f0-9]{32}\.pdf)$/i);
     return match ? `/api/content-files/${match[1]}` : null;
+}
+
+let contentFilesBucket = null;
+function getContentFilesBucket() {
+    if (contentFilesBucket) return contentFilesBucket;
+    const db = mongoose.connection?.db;
+    if (!db) throw new Error('MongoDB is not connected');
+    contentFilesBucket = new mongoose.mongo.GridFSBucket(db, { bucketName: 'contentFiles' });
+    return contentFilesBucket;
 }
 
 // =======================
@@ -121,7 +127,6 @@ router.post('/content/upload', (req, res, next) => {
 
         const { title, classLevel, uploadedBy, tags: tagsRaw } = req.body;
         if (!title || classLevel === undefined || classLevel === '') {
-            if (req.file.path) fs.unlink(req.file.path, () => {});
             return res.status(400).json({ error: 'title and classLevel are required' });
         }
 
@@ -135,12 +140,30 @@ router.post('/content/upload', (req, res, next) => {
             }
         }
 
-        const link = `/api/content-files/${req.file.filename}`;
+        const fileId = new mongoose.Types.ObjectId();
+        const bucket = getContentFilesBucket();
+        const uploadStream = bucket.openUploadStream(req.file.originalname || `${fileId}.pdf`, {
+            id: fileId,
+            contentType: req.file.mimetype || 'application/pdf',
+            metadata: {
+                title,
+                classLevel,
+                uploadedBy: uploadedBy || 'anonymous',
+            },
+        });
+
+        await new Promise((resolve, reject) => {
+            Readable.from(req.file.buffer)
+                .pipe(uploadStream)
+                .on('finish', resolve)
+                .on('error', reject);
+        });
+
+        const link = `/api/content-files/${fileId.toString()}`;
 
         let extractedText = [];
         try {
-            const buf = await fs.promises.readFile(req.file.path);
-            const data = await pdf(buf);
+            const data = await pdf(req.file.buffer);
             extractedText = [{ page: 1, content: data.text }];
         } catch (e) {
             console.error('PDF extraction (upload):', e.message);
@@ -158,18 +181,40 @@ router.post('/content/upload', (req, res, next) => {
         res.status(201).json(newContent);
     } catch (err) {
         console.error('content/upload:', err.message);
-        if (req.file?.path) fs.unlink(req.file.path, () => {});
         res.status(500).json({ error: 'Failed to save uploaded content', details: err.message });
     }
 });
 
-router.get('/content-files/:name', (req, res) => {
+router.get('/content-files/:name', async (req, res) => {
     const name = req.params.name;
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
+
+    if (/^[a-f0-9]{24}$/i.test(name)) {
+        try {
+            const bucket = getContentFilesBucket();
+            const fileId = new mongoose.Types.ObjectId(name);
+            const fileDocs = await mongoose.connection.db.collection('contentFiles.files').find({ _id: fileId }).limit(1).toArray();
+            if (!fileDocs.length) return res.status(404).send('Not found');
+            const fileDoc = fileDocs[0];
+            res.setHeader('Content-Type', fileDoc.contentType || 'application/pdf');
+            res.setHeader('Accept-Ranges', 'bytes');
+            if (fileDoc.length) res.setHeader('Content-Length', fileDoc.length);
+            bucket.openDownloadStream(fileId)
+                .on('error', () => {
+                    if (!res.headersSent) res.status(404).send('Not found');
+                })
+                .pipe(res);
+            return;
+        } catch (err) {
+            console.error('content-files gridfs:', err.message);
+            return res.status(404).send('Not found');
+        }
+    }
+
     if (!/^[a-f0-9]{32}\.pdf$/i.test(name)) {
         return res.status(400).send('Invalid file');
     }
     const filePath = path.join(CONTENT_UPLOAD_DIR, name);
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
     res.sendFile(path.resolve(filePath), (err) => {
         if (err && !res.headersSent) res.status(404).send('Not found');
     });
@@ -181,10 +226,18 @@ router.delete('/content/:id', async (req, res) => {
         const content = await ClassContent.findById(req.params.id);
         if (!content) return res.status(404).json({ error: 'Not found' });
 
-        const m = content.link && content.link.match(/\/api\/content-files\/([a-f0-9]{32}\.pdf)/i);
-        if (m) {
-            const fp = path.join(CONTENT_UPLOAD_DIR, m[1]);
-            fs.unlink(fp, () => {});
+        const m = content.link && content.link.match(/\/api\/content-files\/([a-f0-9]{24}|[a-f0-9]{32}\.pdf)/i);
+        if (m?.[1]) {
+            if (/^[a-f0-9]{24}$/i.test(m[1])) {
+                try {
+                    await getContentFilesBucket().delete(new mongoose.Types.ObjectId(m[1]));
+                } catch (err) {
+                    console.error('gridfs delete:', err.message);
+                }
+            } else {
+                const fp = path.join(CONTENT_UPLOAD_DIR, m[1]);
+                fs.unlink(fp, () => {});
+            }
         }
 
         await ClassContent.findByIdAndDelete(req.params.id);

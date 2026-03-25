@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Paperclip, X, Loader2 } from 'lucide-react';
 import ChatMessage from './ChatMessage';
+import { apiUrl } from '../../lib/api';
 
 interface AISidePanelProps {
     onClose: () => void;
@@ -48,13 +49,10 @@ export default function AISidePanel({ onClose }: AISidePanelProps) {
         setIsLoading(true);
 
         try {
-            // Fix URL construction (removes trailing slash from env var if present)
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-            
-            const response = await fetch(`${baseUrl}/airesponse`, {
+            const response = await fetch(apiUrl('/api/airesponse'), {
                 method: "POST",
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: currentPrompt }),
+                body: JSON.stringify({ prompt: currentPrompt }),
             });
 
             const data = await response.json();

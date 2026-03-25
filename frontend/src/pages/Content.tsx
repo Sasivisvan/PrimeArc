@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useUser } from '../context/UserContext';
+import { apiBaseUrl, apiUrl } from '../lib/api';
 
 interface Comment {
     _id?: string;
@@ -39,15 +40,11 @@ import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Download, Bot, Sparkles, Tr
 
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
-function apiBaseUrl() {
-    return import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:5000';
-}
-
 /** PDFs stored on our API are loaded directly; external URLs go through the proxy (CORS). */
 function contentPdfDocumentSrc(link: string) {
     const base = apiBaseUrl();
     const t = link.trim();
-    if (/\/api\/content-files\/[a-f0-9]{32}\.pdf/i.test(t)) {
+    if (/\/api\/content-files\/(?:[a-f0-9]{24}|[a-f0-9]{32}\.pdf)/i.test(t)) {
         try {
             return new URL(t).href;
         } catch {
@@ -60,7 +57,7 @@ function contentPdfDocumentSrc(link: string) {
 function contentExternalUrl(link: string) {
     const base = apiBaseUrl();
     const t = link.trim();
-    if (/\/api\/content-files\/[a-f0-9]{32}\.pdf/i.test(t)) {
+    if (/\/api\/content-files\/(?:[a-f0-9]{24}|[a-f0-9]{32}\.pdf)/i.test(t)) {
         return `${base}${t.startsWith('/') ? t : `/${t}`}`;
     }
     return t;
@@ -130,12 +127,11 @@ export default function Content() {
 
     const aiChatStorageKey = `primearc_ai_chat_${classLevel}_${username || 'anonymous'}_${activeViewerId || 'none'}`;
     const activeViewerItem = activeViewerId ? contents.find(c => c._id === activeViewerId) : null;
-    const activeViewerUsesHostedFile = !!activeViewerItem?.link && /\/api\/content-files\/[a-f0-9]{32}\.pdf/i.test(activeViewerItem.link);
+    const activeViewerUsesHostedFile = !!activeViewerItem?.link && /\/api\/content-files\/(?:[a-f0-9]{24}|[a-f0-9]{32}\.pdf)/i.test(activeViewerItem.link);
 
     const fetchContent = async () => {
         try {
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-            const res = await fetch(`${baseUrl}/api/content?classLevel=${classLevel}`);
+            const res = await fetch(apiUrl(`/api/content?classLevel=${classLevel}`));
             if (res.ok) {
                 const data = await res.json();
                 
@@ -277,9 +273,8 @@ export default function Content() {
             formData.append('uploadedBy', username || '');
             formData.append('tags', JSON.stringify(selectedTags));
 
-            const baseUrl = apiBaseUrl();
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', `${baseUrl}/api/content/upload`);
+            xhr.open('POST', apiUrl('/api/content/upload'));
 
             xhr.upload.onprogress = (event) => {
                 if (event.lengthComputable) {
@@ -315,8 +310,7 @@ export default function Content() {
         } else {
             // Standard external link database upload
             try {
-                const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-                const res = await fetch(`${baseUrl}/api/content`, {
+                const res = await fetch(apiUrl('/api/content'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -359,8 +353,7 @@ export default function Content() {
         }
 
         try {
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-            await fetch(`${baseUrl}/api/content/${id}/upvote`, { method: 'PUT' });
+            await fetch(apiUrl(`/api/content/${id}/upvote`), { method: 'PUT' });
             fetchContent();
         } catch (err) { console.error(err); }
     };
@@ -380,8 +373,7 @@ export default function Content() {
         }
 
         try {
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-            const res = await fetch(`${baseUrl}/api/content/${id}`, { method: 'DELETE' });
+            const res = await fetch(apiUrl(`/api/content/${id}`), { method: 'DELETE' });
             if (res.ok) {
                 fetchContent();
             } else {
@@ -415,8 +407,7 @@ export default function Content() {
         }
 
         try {
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-            await fetch(`${baseUrl}/api/content/${id}/comment`, {
+            await fetch(apiUrl(`/api/content/${id}/comment`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user: username, text: commentText, page: pageNum })
@@ -438,8 +429,7 @@ export default function Content() {
         setAiMessages(historyForRequest);
 
         try {
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-            const res = await fetch(`${baseUrl}/api/airesponse`, {
+            const res = await fetch(apiUrl('/api/airesponse'), {
                 method: "POST",
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -502,8 +492,7 @@ export default function Content() {
 
     const fetchDocQuizzes = async (docId: string) => {
         try {
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-            const res = await fetch(`${baseUrl}/api/quizzes?user=${encodeURIComponent(username || '')}&documentId=${docId}`);
+            const res = await fetch(apiUrl(`/api/quizzes?user=${encodeURIComponent(username || '')}&documentId=${docId}`));
             if (res.ok) setDocQuizzes(await res.json());
         } catch(err) { console.error(err); }
     };
@@ -512,8 +501,7 @@ export default function Content() {
         if (!username) return;
         setIsSavingStudyProgress(true);
         try {
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-            const res = await fetch(`${baseUrl}/api/content/${contentId}/study-progress`, {
+            const res = await fetch(apiUrl(`/api/content/${contentId}/study-progress`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ user: username, pages })
@@ -569,9 +557,8 @@ export default function Content() {
 
         setIsGeneratingQuiz(true);
         try {
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
             const sourceText = buildQuizSourceText(item);
-            const res = await fetch(`${baseUrl}/api/generate-quiz`, {
+            const res = await fetch(apiUrl('/api/generate-quiz'), {
                 method: 'POST',
                 headers:{ 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -588,7 +575,7 @@ export default function Content() {
             const generatedQs = await res.json();
             
             if (Array.isArray(generatedQs) && generatedQs.length > 0) {
-                const saveRes = await fetch(`${baseUrl}/api/quizzes`, {
+                const saveRes = await fetch(apiUrl('/api/quizzes'), {
                     method: 'POST',
                     headers:{ 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -625,8 +612,7 @@ export default function Content() {
         setQuizResult({ correct, total: activeQuiz.questions.length, score });
 
         try {
-            const baseUrl = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:5000";
-            await fetch(`${baseUrl}/api/quizzes/${activeQuiz._id}/score`, {
+            await fetch(apiUrl(`/api/quizzes/${activeQuiz._id}/score`), {
                 method: 'PUT',
                 headers:{ 'Content-Type': 'application/json' },
                 body: JSON.stringify({ score })

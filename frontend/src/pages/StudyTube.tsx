@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
 import { Search, UserRound, Eye, PlaySquare, X } from 'lucide-react';
+import { apiUrl } from '../lib/api';
 
 interface YouTubeVideo {
     id: string;
@@ -23,7 +24,7 @@ export default function StudyTube() {
         setActiveVideoId(null);
         try {
             const q = queryParam || `${classLevel} educational`;
-            const res = await fetch(`http://localhost:5000/api/youtube-search?q=${encodeURIComponent(q)}`);
+            const res = await fetch(apiUrl(`/api/youtube-search?q=${encodeURIComponent(q)}`));
             if (res.ok) {
                 const data = await res.json();
                 setVideos(data);

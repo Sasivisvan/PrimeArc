@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
 import { Check, Calendar, Trash2 } from 'lucide-react';
+import { apiUrl } from '../lib/api';
 
 interface TaskItem {
     _id: string;
@@ -34,7 +35,7 @@ export default function Tasks() {
     const fetchTasks = async () => {
         try {
             // Fetch both personal and class tasks in one go or separately based on API
-            const res = await fetch(`http://localhost:5000/api/tasks?classLevel=${classLevel}&username=${encodeURIComponent(username || '')}`);
+            const res = await fetch(apiUrl(`/api/tasks?classLevel=${classLevel}&username=${encodeURIComponent(username || '')}`));
             if (res.ok) {
                 const data = await res.json();
                 setTasks(data);
@@ -51,7 +52,7 @@ export default function Tasks() {
     const handleAddTask = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await fetch('http://localhost:5000/api/tasks', {
+            const res = await fetch(apiUrl('/api/tasks'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -86,7 +87,7 @@ export default function Tasks() {
 
     const toggleStatus = async (id: string, currentStatus: boolean) => {
         try {
-            const res = await fetch(`http://localhost:5000/api/tasks/${id}`, {
+            const res = await fetch(apiUrl(`/api/tasks/${id}`), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ completed: !currentStatus, username })
@@ -108,7 +109,7 @@ export default function Tasks() {
     const handleDeleteTask = async (id: string, taskTitle: string) => {
         if (!window.confirm(`Delete task "${taskTitle}"?`)) return;
         try {
-            const res = await fetch(`http://localhost:5000/api/tasks/${id}`, {
+            const res = await fetch(apiUrl(`/api/tasks/${id}`), {
                 method: 'DELETE',
             });
 

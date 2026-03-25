@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { Brain, Paperclip, X, Settings, Trophy, Check, ChevronRight } from 'lucide-react';
+import { apiUrl } from '../lib/api';
 
 interface QuizQuestion {
     question: string;
@@ -62,7 +63,7 @@ export default function Quizzes() {
         setSelectedOption(null);
 
         try {
-            const res = await fetch('http://localhost:5000/api/generate-quiz', {
+            const res = await fetch(apiUrl('/api/generate-quiz'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 

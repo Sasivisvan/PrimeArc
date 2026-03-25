@@ -9,7 +9,6 @@ import ChatState from "./models/ChatState.js";
 import Task from "./models/Task.js";
 
 import { CreateUser, GetAllUsers } from "./controllers/UserController.js";
-import {GetAiResponse} from "./routes/GetAiResponse.js";
 
 // Initialize dotenv
 dotenv.config();
@@ -25,8 +24,8 @@ app.use(cors({
     origin: true,
     exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Length'],
 }));
-app.use(express.json({ limit: '20mb' }));
-app.use(express.urlencoded({ limit: '20mb', extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Request logger
 app.use((req, res, next) => {
@@ -38,21 +37,15 @@ import apiRoutes from "./routes/api.js";
 app.use("/api", apiRoutes);
 
 // Basic Route
-app.get("/", (req, res) => {
+app.get("/api", (req, res) => {
     res.json({ status: "Backend is running!", models: ["gemini-flash-latest", "ollama/qwen2.5:7b"] });
 });
 
-app.post("/airesponse", async(req, res) => {
-    const response = await GetAiResponse(req.body.message);
-    console.log(response);
-    res.json({ reply: response });
-});
-
-app.get("/test", (req, res) => {
+app.get("/api/test", (req, res) => {
     res.send("This is a test");
 });
 
-app.get("/addme", (req, res) => {
+app.get("/api/addme", (req, res) => {
     try {
         CreateUser(req,res);
     } catch(e) {
@@ -61,8 +54,9 @@ app.get("/addme", (req, res) => {
 });
 
 // Database Connection (optional — Gemini chat works without it)
-const connectDB = async () => {
+export const connectDB = async () => {
     try {
+        if (mongoose.connection.readyState === 1 || mongoose.connection.readyState === 2) return;
         const uri = process.env.MONGO_URI || '';
         // Detect common placeholder patterns like <PrimeArc> or <db_password>
         if (!uri || uri.includes('<')) {
@@ -87,9 +81,6 @@ const connectDB = async () => {
     }
 };
 connectDB();
-
-// Keep event loop alive so Node.js doesn't exit without a DB connection
-const keepAlive = setInterval(() => {}, 1000 * 60 * 60);
 
 // Initialize Gemini model once (not per-request)
 const geminiModel = new ChatGoogleGenerativeAI({
@@ -138,8 +129,8 @@ async function buildTaskContext(chatUser, classLevel) {
     return `USER TASKS:\n${lines.join('\n')}`;
 }
 
-// POST /chat - Send a message
-app.post("/chat", async (req, res) => {
+// POST /api/chat - Send a message
+app.post("/api/chat", async (req, res) => {
     try {
         const { message, history = [], user, classLevel } = req.body;
         const chatUser = typeof user === 'string' && user.trim() ? user.trim() : 'anonymous';
@@ -270,8 +261,8 @@ ${taskContext}` : ''}`;
         });
 });
 
-// GET /chat-history - Load previous messages
-app.get("/chat-history", async (req, res) => {
+// GET /api/chat-history - Load previous messages
+app.get("/api/chat-history", async (req, res) => {
     try {
         if (mongoose.connection.readyState !== 1) {
             return res.json([]); // Return empty array if no DB
@@ -285,8 +276,8 @@ app.get("/chat-history", async (req, res) => {
     }
 });
 
-// GET /chat-state - Load saved multi-chat state for a user
-app.get("/chat-state", async (req, res) => {
+// GET /api/chat-state - Load saved multi-chat state for a user
+app.get("/api/chat-state", async (req, res) => {
     try {
         if (mongoose.connection.readyState !== 1) {
             return res.json(null);
@@ -300,8 +291,8 @@ app.get("/chat-state", async (req, res) => {
     }
 });
 
-// PUT /chat-state - Persist multi-chat state for a user
-app.put("/chat-state", async (req, res) => {
+// PUT /api/chat-state - Persist multi-chat state for a user
+app.put("/api/chat-state", async (req, res) => {
     try {
         if (mongoose.connection.readyState !== 1) {
             return res.status(503).json({ error: "Database unavailable" });
@@ -342,9 +333,12 @@ app.put("/chat-state", async (req, res) => {
     }
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`\n✅ PrimeArc Backend running on http://localhost:${PORT}`);
-    console.log("   Model: gemini-flash-latest");
-    console.log("   Press Ctrl+C to stop\n");
-});
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`\n✅ PrimeArc Backend running on http://localhost:${PORT}`);
+        console.log("   Model: gemini-flash-latest");
+        console.log("   Press Ctrl+C to stop\n");
+    });
+}
+
+export default app;

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
 import { Users } from 'lucide-react';
+import { apiUrl } from '../lib/api';
 
 interface Answer {
     _id: string;
@@ -39,7 +40,7 @@ export default function Community() {
 
     const fetchQuestions = async () => {
         try {
-            const res = await fetch(`http://localhost:5000/api/questions?classLevel=${classLevel}`);
+            const res = await fetch(apiUrl(`/api/questions?classLevel=${classLevel}`));
             if (res.ok) {
                 const data = await res.json();
                 setQuestions(data);
@@ -56,7 +57,7 @@ export default function Community() {
     const handleAskQuestion = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const res = await fetch('http://localhost:5000/api/questions', {
+            const res = await fetch(apiUrl('/api/questions'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ title, body, author: username, classLevel })
@@ -78,7 +79,7 @@ export default function Community() {
         e.preventDefault();
         if(!answerBody.trim()) return;
         try {
-            const res = await fetch(`http://localhost:5000/api/questions/${questionId}/answers`, {
+            const res = await fetch(apiUrl(`/api/questions/${questionId}/answers`), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ body: answerBody, author: username })

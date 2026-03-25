@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useUser } from '../context/UserContext';
+import { apiUrl } from '../lib/api';
 
 interface Message {
     role: 'user' | 'ai';
@@ -23,7 +24,6 @@ interface StoredChatState {
     chats: ChatSession[];
 }
 
-const BACKEND_URL = "http://localhost:5000";
 const makeChatStorageKey = (username: string | null) =>
     `primearc_chat_sessions_${username || 'anonymous'}`;
 const MAX_STORED_MESSAGES = 100;
@@ -216,7 +216,7 @@ const Chat = () => {
             setHasLoadedRemoteState(false);
 
             try {
-                const res = await fetch(`${BACKEND_URL}/chat-state?user=${encodeURIComponent(username || 'anonymous')}`);
+                const res = await fetch(apiUrl(`/api/chat-state?user=${encodeURIComponent(username || 'anonymous')}`));
                 if (!res.ok) throw new Error('remote chat state unavailable');
                 const remote = await res.json();
                 if (cancelled) return;
@@ -273,7 +273,7 @@ const Chat = () => {
 
         const timeoutId = window.setTimeout(async () => {
             try {
-                const res = await fetch(`${BACKEND_URL}/chat-state`, {
+                const res = await fetch(apiUrl('/api/chat-state'), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -363,7 +363,7 @@ const Chat = () => {
     useEffect(() => {
         const checkStatus = async () => {
             try {
-                const res = await fetch(`${BACKEND_URL}/`);
+                const res = await fetch(apiUrl('/api'));
                 setBackendStatus(res.ok ? 'online' : 'offline');
             } catch {
                 setBackendStatus('offline');
@@ -406,7 +406,7 @@ const Chat = () => {
 
     const sendGemini = async (trimmed: string, targetChatId: string, nextHistory: Message[]) => {
         try {
-            const res = await fetch(`${BACKEND_URL}/chat`, {
+            const res = await fetch(apiUrl('/api/chat'), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -464,7 +464,7 @@ const Chat = () => {
         }));
 
         try {
-            const res = await fetch(`${BACKEND_URL}/api/ollama/chat`, {
+            const res = await fetch(apiUrl('/api/ollama/chat'), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

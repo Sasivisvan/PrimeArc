@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useUser } from '../context/UserContext';
 import { Search, Paperclip, X, Check, FileImage, FileText, FileSpreadsheet, Video, Music, PaperclipIcon, Sparkles } from 'lucide-react';
+import { apiBaseUrl, apiUrl } from '../lib/api';
 const MAX_FILE_SIZE_MB = 5;
-
-function apiBaseUrl() {
-    return import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:5000';
-}
 
 interface AttachedFile {
     name: string;
@@ -210,7 +207,7 @@ export default function Notes() {
         setLoadingFlashcards(true);
         setFlashcards(null);
         try {
-            const res = await fetch('http://localhost:5000/api/generate-flashcards', {
+            const res = await fetch(apiUrl('/api/generate-flashcards'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ noteContent })
@@ -250,7 +247,7 @@ export default function Notes() {
         e.preventDefault();
         if (!highlightData) return;
         try {
-            const res = await fetch('http://localhost:5000/api/questions', {
+            const res = await fetch(apiUrl('/api/questions'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

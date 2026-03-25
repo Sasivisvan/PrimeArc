@@ -1,6 +1,11 @@
 {
-  "installCommand": "npm install",
+  "installCommand": "npm run install:all",
   "buildCommand": "npm run vercel-build",
   "outputDirectory": "frontend/dist",
-  "framework": null
+  "framework": null,
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 60
+    }
+  }
 }
